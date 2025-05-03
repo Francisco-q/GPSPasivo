@@ -4,3 +4,4 @@ dist/
 .firebase/
 venv/
 __pycache__/
+Backend/serviceAccountKey.json
