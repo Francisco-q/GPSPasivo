@@ -1,6 +1,4 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase/firebase-config'; 
 import axios from 'axios';
 import { useState } from 'react';
 
@@ -14,33 +12,24 @@ export default function Register() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
     if (password !== confirmPassword) {
       setError('Las contraseñas no coinciden');
       return;
     }
 
-    try {      // Registrar en backend Flask directamente
-      // El backend se encargará de crear el usuario en Firebase Authentication
-      await axios.post('http://localhost:5000/signup', {
+    try {
+      const response = await axios.post('http://localhost:5000/register', {
         nombre,
         email,
         password
       });
 
-      navigate('/login');
-        } catch (err) {
-      console.error('Error detallado:', err);
-      if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error); // Mostrar error del backend
-      } else if (err.code === 'auth/email-already-in-use') {
-        setError('El correo ya está registrado');
-      } else if (err.code === 'auth/weak-password') {
-        setError('La contraseña debe tener al menos 6 caracteres');
-      } else if (err.code === 'auth/invalid-email') {
-        setError('El formato de correo electrónico es inválido');
-      } else {
-        setError('Error al registrar el usuario: ' + (err.message || ''));
+      if (response.status === 201) {
+        navigate('/login');
       }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al registrar usuario');
     }
   };
 

@@ -1,6 +1,4 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../firebase/firebase-config'; 
 import axios from 'axios';
 import { useState } from 'react';
 
@@ -13,38 +11,22 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      // Autenticar con Firebase
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const token = await userCredential.user.getIdToken();      // Verificar con backend Flask
       const response = await axios.post('http://localhost:5000/login', {
-        idToken: token
+        email,
+        password
       });
 
-      // Guardar información del usuario en localStorage para mantener la sesión
+      // Guardar token en localStorage
+      localStorage.setItem('token', response.data.id_token);
       localStorage.setItem('user', JSON.stringify({
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName || ''
+        email: response.data.email,
+        nombre: response.data.nombre,
+        user_id: response.data.user_id
       }));
-
-      // Redirigir al dashboard
+      
       navigate('/dashboard');
-        } catch (err) {
-      console.error('Error detallado:', err);
-      if (err.code === 'auth/invalid-credential') {
-        setError('Correo o contraseña incorrectos');
-      } else if (err.code === 'auth/user-not-found') {
-        setError('El usuario no existe');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Contraseña incorrecta');
-      } else if (err.code === 'auth/invalid-email') {
-        setError('Formato de correo inválido');
-      } else if (err.response && err.response.data && err.response.data.error) {
-        // Error del backend
-        setError('Error del servidor: ' + err.response.data.error);
-      } else {
-        setError('Error de conexión: ' + (err.message || 'Verifique su conexión'));
-      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error al iniciar sesión');
     }
   };
 

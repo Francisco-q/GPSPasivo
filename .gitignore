@@ -5,3 +5,4 @@ dist/
 venv/
 __pycache__/
 Backend/serviceAccountKey.json
+Backend/.env

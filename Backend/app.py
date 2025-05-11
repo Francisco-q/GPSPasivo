@@ -7,6 +7,19 @@ import base64
 from io import BytesIO
 from firebase_admin import auth
 from flask_cors import CORS
+import os
+import requests
+from dotenv import find_dotenv
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Cargar variables de entorno desde el archivo .env
+env_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(env_path)
+
+print("Variables cargadas del .env:")
+print("API_KEY:", os.getenv('FIREBASE_API_KEY'))
+print("AUTH_DOMAIN:", os.getenv('FIREBASE_AUTH_DOMAIN'))
 
 app = Flask(__name__)
 CORS(app)
@@ -100,7 +113,7 @@ def scan_qr(pet_id):
 
 
 # Crear un nuevo usuario en Firebase Authentication
-@app.route('/signup', methods=['POST'])
+@app.route('/register', methods=['POST'])
 def signup():
     try:
         # Asegurar que el contenido es JSON
@@ -123,7 +136,7 @@ def signup():
         nombre = data.get('nombre', '')  # Usa 'nombre' como en tu JSON
 
         try:
-            # Crear usuario en Firebase Authentication
+          
             user = auth.create_user(
                 email=email,
                 password=password,
@@ -132,7 +145,6 @@ def signup():
             
             print(f"Usuario creado en Firebase Auth con UID: {user.uid}")
 
-            # Guardar datos adicionales en Firestore
             db.collection('users').document(user.uid).set({
                 'email': email,
                 'nombre': nombre,
@@ -165,71 +177,58 @@ def signup():
 @app.route('/login', methods=['POST'])
 def login():
     try:
-        print("Solicitud recibida en /login")
-        
-        # Verificar que hay datos JSON
+        # Verificar que el contenido es JSON
         if not request.is_json:
-            print("Error: No es una solicitud JSON")
             return jsonify({"error": "Content-Type debe ser application/json"}), 415
+
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        # Validar campos requeridos
+        if not email:
+            return jsonify({"error": "Falta el campo: email"}), 400
+        if not password:
+            return jsonify({"error": "Falta el campo: password"}), 400
+
+        # Autenticar con Firebase REST API
+        FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY')
+        url = f'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}'
+        print("API KEY USADA:", os.environ.get('FIREBASE_API_KEY'))
+        response = requests.post(url, json={
+            'email': email,
+            'password': password,
+            'returnSecureToken': True
+        })
+
+        response_data = response.json()
+
+        # Manejar errores de Firebase
+        if response.status_code != 200:
+            error_msg = response_data.get('error', {}).get('message', 'Error desconocido')
             
-        # Imprimir datos recibidos para debug
-        print(f"Datos recibidos en /login: {request.json}")
+            if error_msg == 'INVALID_LOGIN_CREDENTIALS':
+                return jsonify({"error": "Credenciales inválidas"}), 401
+            elif error_msg == 'USER_DISABLED':
+                return jsonify({"error": "Usuario deshabilitado"}), 403
+            else:
+                return jsonify({"error": error_msg}), response.status_code
+
+        # Obtener datos adicionales de Firestore
+        user_id = response_data['localId']
+        user_doc = db.collection('users').document(user_id).get()
         
-        # Obtener token del cuerpo de la solicitud
-        id_token = request.json.get('idToken')
-        if not id_token:
-            print("Error: Token no proporcionado")
-            return jsonify({"error": "Token no proporcionado"}), 400
+        return jsonify({
+            "message": "Login exitoso",
+            "user_id": user_id,
+            "email": email,
+            "nombre": user_doc.to_dict().get('nombre', '') if user_doc.exists else '',
+            "id_token": response_data['idToken']
+        }), 200
 
-        print(f"Token recibido: {id_token[:20]}...")  # Solo muestra los primeros 20 caracteres
-
-        try:
-            # Verificar token con Firebase
-            print("Verificando token con Firebase...")
-            decoded_token = auth.verify_id_token(id_token)
-            uid = decoded_token['uid']
-            print(f"Token verificado para UID: {uid}")
-
-            # Obtener datos del usuario desde Firestore
-            user_ref = db.collection('users').document(uid)
-            user_doc = user_ref.get()
-
-            if not user_doc.exists:
-                print(f"Error: Usuario con UID {uid} no encontrado en Firestore")
-                return jsonify({"error": "Usuario no encontrado"}), 404
-                
-            user_data = user_doc.to_dict()
-            print("Datos del usuario recuperados correctamente")
-
-            return jsonify({
-                "message": "Login exitoso",
-                "user": {
-                    "uid": uid,
-                    "email": user_data['email'],
-                    "nombre": user_data.get('nombre', '')
-                }
-            }), 200
-            
-        except auth.InvalidIdTokenError:
-            print("Error: Token inválido")
-            return jsonify({"error": "Token inválido o expirado"}), 401
-        except auth.ExpiredIdTokenError:
-            print("Error: Token expirado")
-            return jsonify({"error": "El token ha expirado"}), 401
-        except Exception as token_error:
-            print(f"Error al verificar token: {str(token_error)}")
-            return jsonify({"error": f"Error de autenticación: {str(token_error)}"}), 401
-            
     except Exception as e:
-        print(f"Error general en /login: {str(e)}")
-        return jsonify({"error": f"Error del servidor: {str(e)}"}), 500
-
-    except auth.ExpiredIdTokenError:
-        return jsonify({"error": "Token expirado"}), 401
-    except auth.InvalidIdTokenError:
-        return jsonify({"error": "Token inválido"}), 401
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error en login: {str(e)}")
+        return jsonify({"error": "Error interno del servidor"}), 500
     
 # autentificación de usuario
 def auth_required(f):

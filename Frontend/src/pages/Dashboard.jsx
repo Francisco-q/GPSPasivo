@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '../firebase/firebase-config';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import axios from 'axios';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -9,27 +8,32 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-      } else {
-        // Si no hay usuario autenticado, redirigir al login
-        navigate('/');
+    const checkAuth = () => {
+      const token = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      
+      if (!token || !storedUser) {
+        navigate('/login');
+        return;
+      }
+      
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+        navigate('/login');
       }
       setLoading(false);
-    });
+    };
 
-    // Limpiar el observer al desmontar
-    return () => unsubscribe();
+    checkAuth();
   }, [navigate]);
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      navigate('/');
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    navigate('/login');
   };
 
   if (loading) {
@@ -47,7 +51,7 @@ export default function Dashboard() {
           <div className="flex justify-between h-16 items-center">
             <h1 className="text-2xl font-bold">GPS Pasivo</h1>
             <div className="flex items-center">
-              <span className="mr-4">Hola, {user?.displayName || user?.email}</span>
+              <span className="mr-4">Hola, {user?.nombre || user?.email}</span>
               <button 
                 onClick={handleLogout}
                 className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition"
