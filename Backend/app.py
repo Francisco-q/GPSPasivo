@@ -17,9 +17,7 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(env_path)
 
-print("Variables cargadas del .env:")
-print("API_KEY:", os.getenv('FIREBASE_API_KEY'))
-print("AUTH_DOMAIN:", os.getenv('FIREBASE_AUTH_DOMAIN'))
+
 
 app = Flask(__name__)
 CORS(app)
