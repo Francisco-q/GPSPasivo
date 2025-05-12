@@ -15,6 +15,7 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(env_path)
 
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})  # Permitir solicitudes desde el frontend
 
