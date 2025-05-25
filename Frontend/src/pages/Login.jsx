@@ -14,21 +14,30 @@ export default function Login() {
     try {
       const response = await axios.post('http://localhost:5000/login', {
         email,
-        password
+        password,
       });
 
-      console.log('Respuesta de login:', response.data); // Depuración
+      console.log('Respuesta de login:', response.data);
 
-      // Guardar token en localStorage
+      // Guardar token y datos del usuario en localStorage
       if (!response.data.token) {
         throw new Error('No se recibió un token en la respuesta del servidor');
       }
       localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify({
-        email: response.data.email,
-        nombre: response.data.nombre,
-        user_id: response.data.user_id
-      }));
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          email: response.data.email,
+          nombre: response.data.nombre,
+          user_id: response.data.user_id,
+        })
+      );
+
+      // Configurar el token en axios para solicitudes futuras
+      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
+
+      // Esperar un momento para asegurar la consistencia de Firestore
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       navigate('/dashboard');
     } catch (err) {

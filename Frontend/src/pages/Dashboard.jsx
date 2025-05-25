@@ -25,13 +25,32 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
+  // Función para realizar solicitudes con reintentos
+  const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await axios(url, options);
+        return response;
+      } catch (err) {
+        if (err.response?.status === 401 || err.response?.status === 404) {
+          if (i < retries - 1) {
+            console.log(`Intento ${i + 1} fallido: ${err.response?.status}. Reintentando...`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+        throw err;
+      }
+    }
+  };
+
   // Verificar autenticación al cargar el componente
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem('token');
       const storedUser = localStorage.getItem('user');
 
-      console.log('Token almacenado:', token); // Depuración
+      console.log('Token almacenado:', token ? token.slice(0, 20) + '...' : 'No token');
       console.log('Usuario almacenado:', storedUser);
 
       if (!token || !storedUser) {
@@ -43,6 +62,7 @@ export default function Dashboard() {
       try {
         const userData = JSON.parse(storedUser);
         setUser(userData);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       } catch (error) {
         console.error('Error al parsear datos del usuario:', error);
         setError('Error al cargar los datos del usuario.');
@@ -60,11 +80,15 @@ export default function Dashboard() {
       if (!user) return;
       try {
         const token = localStorage.getItem('token');
-        console.log('Enviando solicitud GET /pets con token:', token); // Depuración
-        const response = await axios.get(`http://localhost:5000/users/${user.user_id}/pets`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log('Respuesta de GET /pets:', response.data); // Depuración
+        console.log('Enviando solicitud GET /pets con token:', token.slice(0, 20) + '...');
+        const response = await fetchWithRetry(
+          `http://localhost:5000/users/${user.user_id}/pets`,
+          {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        console.log('Respuesta de GET /pets:', response.data);
         setPets(response.data);
         if (response.data.length > 0) {
           setSelectedPet(response.data[0].id);
@@ -74,6 +98,9 @@ export default function Dashboard() {
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
+        } else if (error.response?.status === 404) {
+          setError('Usuario no encontrado. Reintentando...');
+          // No redirigir, permitir reintentos
         } else {
           setError(error.response?.data?.error || 'No se pudieron cargar las mascotas. Por favor, intenta de nuevo.');
         }
@@ -91,17 +118,24 @@ export default function Dashboard() {
       if (!user) return;
       try {
         const token = localStorage.getItem('token');
-        console.log('Enviando solicitud GET /locations con token:', token); // Depuración
-        const response = await axios.get(`http://localhost:5000/users/${user.user_id}/locations`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log('Respuesta de GET /locations:', response.data); // Depuración
+        console.log('Enviando solicitud GET /locations con token:', token.slice(0, 20) + '...');
+        const response = await fetchWithRetry(
+          `http://localhost:5000/users/${user.user_id}/locations`,
+          {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        console.log('Respuesta de GET /locations:', response.data);
         setLocations(response.data);
       } catch (error) {
         console.error('Error al obtener ubicaciones:', error);
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
+        } else if (error.response?.status === 404) {
+          setError('Usuario no encontrado. Reintentando...');
+          // No redirigir, permitir reintentos
         } else {
           setError(error.response?.data?.error || 'No se pudieron cargar las ubicaciones. Por favor, intenta de nuevo.');
         }
@@ -127,14 +161,15 @@ export default function Dashboard() {
         if (addingLocation && selectedPet) {
           const { lat, lng } = e.latlng;
           const token = localStorage.getItem('token');
-          console.log('Enviando solicitud POST /scan con token:', token); // Depuración
-          axios.post(
-            `http://localhost:5000/scan/${selectedPet}`,
-            { latitude: lat, longitude: lng },
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
+          console.log('Enviando solicitud POST /scan con token:', token.slice(0, 20) + '...');
+          axios
+            .post(
+              `http://localhost:5000/scan/${selectedPet}`,
+              { latitude: lat, longitude: lng },
+              { headers: { Authorization: `Bearer ${token}` } }
+            )
             .then((response) => {
-              console.log('Respuesta de POST /scan:', response.data); // Depuración
+              console.log('Respuesta de POST /scan:', response.data);
               setLocations((prev) => [
                 ...prev,
                 {
@@ -171,13 +206,13 @@ export default function Dashboard() {
     }
     try {
       const token = localStorage.getItem('token');
-      console.log('Enviando solicitud POST /pets con token:', token); // Depuración
+      console.log('Enviando solicitud POST /pets con token:', token.slice(0, 20) + '...');
       const response = await axios.post(
         `http://localhost:5000/users/${user.user_id}/pets`,
         { name: newPetName },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      console.log('Respuesta de POST /pets:', response.data); // Depuración
+      console.log('Respuesta de POST /pets:', response.data);
       const newPet = response.data;
       setPets((prev) => [...prev, { id: newPet.id, name: newPet.name }]);
       setNewPetName('');
@@ -280,7 +315,7 @@ export default function Dashboard() {
                 {/* Mapa */}
                 <div className="mt-4 h-96 relative z-10">
                   <MapContainer
-                    center={[-35.4075, -71.6369]}  // Coordenadas del Campus Los Niches
+                    center={[-35.4075, -71.6369]} // Coordenadas del Campus Los Niches
                     zoom={15}
                     style={{ height: '100%', width: '100%' }}
                   >
@@ -310,7 +345,7 @@ export default function Dashboard() {
 
       {/* Modal para agregar mascota */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
             <h3 className="text-lg font-medium mb-4">Agregar Nueva Mascota</h3>
             <input
