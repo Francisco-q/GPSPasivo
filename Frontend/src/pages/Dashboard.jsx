@@ -1,9 +1,10 @@
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
+import { QRCodeSVG as QRCode } from 'qrcode.react';
 
 // Corregir íconos predeterminados de Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -21,9 +22,52 @@ export default function Dashboard() {
   const [selectedPet, setSelectedPet] = useState(null);
   const [addingLocation, setAddingLocation] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const [newPetName, setNewPetName] = useState('');
   const [error, setError] = useState(null);
   const navigate = useNavigate();
+
+  // Referencia para el elemento QR
+  const qrRef = useRef(null);
+  // Función para descargar el QR como imagen
+  const downloadQRCode = () => {
+    if (!qrRef.current) return;
+    
+    // Para QRCodeSVG, necesitamos convertir el SVG a imagen
+    const svg = qrRef.current.querySelector("svg");
+    if (!svg) return;
+    
+    // Crear un canvas para convertir SVG a imagen
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    
+    // Configurar el tamaño del canvas
+    canvas.width = svg.width.baseVal.value;
+    canvas.height = svg.height.baseVal.value;
+    
+    // Convertir SVG a imagen
+    const data = new XMLSerializer().serializeToString(svg);
+    const img = new Image();
+    
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      
+      // Obtener el nombre de la mascota para el nombre del archivo
+      const petName = pets.find((pet) => pet.id === selectedPet)?.name || 'mascota';
+      
+      // Configurar el enlace para descargar
+      const link = document.createElement("a");
+      link.download = `qr-${petName.toLowerCase().replace(/\s+/g, '-')}.png`;
+      link.href = canvas.toDataURL("image/png");
+      
+      // Simular clic para iniciar la descarga
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+    
+    img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(data)))}`;
+  };
 
   // Función para realizar solicitudes con reintentos
   const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
@@ -310,6 +354,13 @@ export default function Dashboard() {
                   >
                     {addingLocation ? 'Haz clic en el mapa' : 'Agregar Escaneo'}
                   </button>
+                  <button
+                    onClick={() => setQrModalOpen(true)}
+                    disabled={!selectedPet}
+                    className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition disabled:bg-gray-400"
+                  >
+                    Ver QR
+                  </button>
                 </div>
 
                 {/* Mapa */}
@@ -367,6 +418,42 @@ export default function Dashboard() {
                 className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
               >
                 Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para mostrar QR */}
+      {qrModalOpen && selectedPet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
+            <h3 className="text-lg font-medium mb-4">
+              Código QR para {pets.find((pet) => pet.id === selectedPet)?.name || 'Mascota'}
+            </h3>
+            <div className="flex justify-center my-4" ref={qrRef}>
+              <QRCode
+                value={`http://localhost:5000/scan/${selectedPet}`}
+                size={200}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            <p className="text-sm text-gray-600 text-center mb-4">
+              Escanea este código QR para registrar la ubicación de tu mascota.
+            </p>
+            <div className="flex justify-end space-x-4">
+              <button
+                onClick={downloadQRCode}
+                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
+              >
+                Descargar QR
+              </button>
+              <button
+                onClick={() => setQrModalOpen(false)}
+                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
+              >
+                Cerrar
               </button>
             </div>
           </div>
