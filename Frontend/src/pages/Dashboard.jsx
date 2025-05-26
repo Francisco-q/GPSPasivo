@@ -1,7 +1,7 @@
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG as QRCode } from 'qrcode.react';
@@ -25,6 +25,9 @@ export default function Dashboard() {
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [newPetName, setNewPetName] = useState('');
   const [error, setError] = useState(null);
+  //para centrar el mapa
+  const [leafletMap, setLeafletMap] = useState(null);
+
   const navigate = useNavigate();
 
   // Referencia para el elemento QR
@@ -271,6 +274,35 @@ export default function Dashboard() {
       }
     }
   };
+  // Mostrar Ubicación más reciente en el mapa
+  const lastLocation = useMemo(() => {
+    if (locations.length === 0) return null;
+    return locations.reduce((latest, loc) =>
+      new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest
+    );
+  }, [locations]);
+
+  useEffect(() => {
+    if (leafletMap && lastLocation) {
+      leafletMap.flyTo([lastLocation.latitude, lastLocation.longitude], 15)
+    }
+  }, [leafletMap, lastLocation])
+
+  //Icono para la ultima ubicación
+  const normalIcon =new L.Icon({
+      iconUrl: 'bluemark.png',
+      shadowUrl: 'shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+    })
+  const lastIcon = new L.Icon({
+      iconUrl: '/redmark.png',
+      shadowUrl: 'shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+  })
+
+
 
   if (loading) {
     return (
@@ -279,6 +311,7 @@ export default function Dashboard() {
       </div>
     );
   }
+
 
   return (
     <>
@@ -369,6 +402,7 @@ export default function Dashboard() {
                     center={[-35.4075, -71.6369]} // Coordenadas del Campus Los Niches
                     zoom={15}
                     style={{ height: '100%', width: '100%' }}
+                    whenReady={({target}) => setLeafletMap(target)}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -376,10 +410,15 @@ export default function Dashboard() {
                     />
                     <AddLocation />
                     {locations.map((loc) => (
-                      <Marker key={`${loc.pet_id}-${loc.created_at}`} position={[loc.latitude, loc.longitude]}>
+                      <Marker key={`${loc.pet_id}-${loc.created_at}`} position={[loc.latitude, loc.longitude]}
+                      icon={lastLocation && lastLocation.created_at == loc.created_at ? lastIcon : normalIcon}
+                      >
                         <Popup>
                           <div>
                             <strong>{loc.pet_name}</strong>
+                            {lastLocation.created_at === loc.created_at && (
+                              <p>Ultima ubicación registrada</p>
+                            )}
                             <p>Escaneado: {new Date(loc.created_at).toLocaleString()}</p>
                             <p>Lat: {loc.latitude.toFixed(4)}, Lng: {loc.longitude.toFixed(4)}</p>
                           </div>
