@@ -6,3 +6,4 @@ venv/
 __pycache__/
 Backend/serviceAccountKey.json
 Backend/.env
+Backend/uploads/

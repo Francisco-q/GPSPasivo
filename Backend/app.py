@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from datetime import datetime
@@ -7,20 +7,27 @@ import base64
 from io import BytesIO
 from flask_cors import CORS
 import os
-import requests
+import uuid
 from dotenv import find_dotenv, load_dotenv
 from pathlib import Path
 import time
+
+import requests
 
 # Cargar variables de entorno desde el archivo .env
 env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(env_path)
 
 app = Flask(__name__)
-# Configurar CORS para permitir el origen del frontend
-CORS(app)  # Ajustar al puerto del frontend
+CORS(app)
 
-# Inicializar Firebase con la clave privada
+# Configurar carpeta para almacenar imágenes
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# Inicializar Firebase (sin storageBucket)
 try:
     cred = credentials.Certificate("serviceAccountKey.json")
     firebase_admin.initialize_app(cred)
@@ -31,6 +38,11 @@ except Exception as e:
 # Obtener instancia de Firestore
 db = firestore.client()
 
+# Servir imágenes desde la carpeta uploads
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # Decorador de autenticación
 def auth_required(f):
     def wrapper(*args, **kwargs):
@@ -40,14 +52,11 @@ def auth_required(f):
             return jsonify({'error': 'Authorization header missing or invalid'}), 401
 
         id_token = auth_header.split('Bearer ')[1]
-        print(f"Token recibido: {id_token[:20]}...")  # Log parcial del token
-
+        print(f"Token recibido: {id_token[:20]}...")
         try:
             decoded_token = auth.verify_id_token(id_token)
             request.uid = decoded_token['uid']
             print(f"Token verificado correctamente para UID: {request.uid}")
-            
-            # Verificar que el documento del usuario existe con reintentos
             user_doc = None
             for attempt in range(3):
                 user_doc = db.collection('users').document(request.uid).get()
@@ -55,7 +64,7 @@ def auth_required(f):
                     break
                 print(f"Intento {attempt + 1}: Documento de usuario no encontrado para UID: {request.uid}")
                 if attempt < 2:
-                    time.sleep(1)  # Esperar 1 segundo antes de reintentar
+                    time.sleep(1)
                 else:
                     print(f"Error: Documento de usuario no encontrado para UID: {request.uid}")
                     return jsonify({'error': 'User document not found'}), 404
@@ -68,9 +77,7 @@ def auth_required(f):
         except Exception as e:
             print(f"Error de autenticación: {str(e)}")
             return jsonify({'error': f'Token verification failed: {str(e)}'}), 401
-
         return f(*args, **kwargs)
-
     wrapper.__name__ = f.__name__
     return wrapper
 
@@ -97,6 +104,7 @@ def add_pet(user_id):
 
     data = request.get_json()
     pet_name = data.get('name')
+    photo_data = data.get('photo')
 
     if not pet_name:
         return jsonify({"error": "Falta el nombre de la mascota"}), 400
@@ -105,14 +113,40 @@ def add_pet(user_id):
     new_pet_ref = pets_ref.document()
     pet_id = new_pet_ref.id
 
+    # Manejar la subida de la foto si existe
+    photo_url = None
+    if photo_data:
+        try:
+            # Extraer el tipo de contenido y los datos base64
+            header, encoded = photo_data.split(",", 1)
+            content_type = header.split(";")[0].split(":")[1]
+            if content_type not in ['image/png', 'image/jpeg', 'image/gif']:
+                return jsonify({"error": "Solo se permiten imágenes PNG, JPEG o GIF"}), 400
+            image_data = base64.b64decode(encoded)
+            file_extension = content_type.split('/')[1]
+            # Generar un nombre de archivo único
+            filename = f"{pet_id}_{uuid.uuid4()}.{file_extension}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            # Guardar la imagen en el sistema de archivos
+            with open(file_path, 'wb') as f:
+                f.write(image_data)
+            # Construir la URL para la imagen
+            photo_url = f"http://localhost:5000/uploads/{filename}"
+        except Exception as e:
+            print(f"Error al guardar la imagen: {str(e)}")
+            return jsonify({"error": "Error al guardar la imagen"}), 500
+
+    # Generar el código QR
     qr_content = f"https://miapp.com/scan/{pet_id}"
     qr = qrcode.make(qr_content)
     buffer = BytesIO()
     qr.save(buffer, format="PNG")
     qr_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
+    # Guardar los datos de la mascota en Firestore
     new_pet_ref.set({
         'name': pet_name,
+        'photo': photo_url if photo_url else None,
         'qr_code': qr_base64,
         'created_at': firestore.SERVER_TIMESTAMP
     })
@@ -120,6 +154,7 @@ def add_pet(user_id):
     return jsonify({
         "id": pet_id,
         "name": pet_name,
+        "photo": photo_url if photo_url else None,
         "qr_content": qr_content,
         "qr_code_base64": qr_base64[:50] + "..."
     }), 201
@@ -131,16 +166,15 @@ def get_pets(user_id):
         print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
         return jsonify({'error': 'No autorizado'}), 403
 
-    # Reintentar hasta 3 veces para manejar consistencia eventual
     for attempt in range(3):
         try:
             pets_ref = db.collection('users').document(user_id).collection('pets').stream()
-            pets = [{"id": pet.id, "name": pet.to_dict().get('name', 'Desconocido')} for pet in pets_ref]
+            pets = [{"id": pet.id, "name": pet.to_dict().get('name', 'Desconocido'), "photo": pet.to_dict().get('photo', None)} for pet in pets_ref]
             return jsonify(pets), 200
         except Exception as e:
             print(f"Intento {attempt + 1} fallido al obtener mascotas: {str(e)}")
             if attempt < 2:
-                time.sleep(1)  # Esperar 1 segundo antes de reintentar
+                time.sleep(1)
             else:
                 return jsonify({'error': 'Error al obtener mascotas'}), 500
 
@@ -219,7 +253,6 @@ def signup():
             display_name=nombre
         )
 
-        # Crear documento de usuario en Firestore con reintentos
         user_ref = db.collection('users').document(user.uid)
         for attempt in range(3):
             try:
@@ -228,7 +261,6 @@ def signup():
                     'nombre': nombre,
                     'created_at': firestore.SERVER_TIMESTAMP
                 })
-                # Verificar que el documento existe
                 if user_ref.get().exists:
                     print(f"Documento creado para UID: {user.uid}")
                     break
@@ -239,10 +271,9 @@ def signup():
                 if attempt < 2:
                     time.sleep(1)
                 else:
-                    auth.delete_user(user.uid)  # Limpiar usuario si falla la creación del documento
+                    auth.delete_user(user.uid)
                     return jsonify({"error": "No se pudo crear el documento del usuario"}), 500
 
-        # Iniciar sesión automáticamente tras el registro
         FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY')
         if not FIREBASE_API_KEY:
             print("Error: FIREBASE_API_KEY no está configurada")
@@ -259,7 +290,7 @@ def signup():
         if response.status_code != 200:
             error_msg = response_data.get('error', {}).get('message', 'Error desconocido')
             print(f"Error al iniciar sesión automáticamente: {error_msg}")
-            auth.delete_user(user.uid)  # Limpiar usuario si falla el login
+            auth.delete_user(user.uid)
             return jsonify({"error": "No se pudo iniciar sesión tras el registro"}), 500
 
         return jsonify({
@@ -323,7 +354,6 @@ def login():
         user_id = response_data['localId']
         user_doc = db.collection('users').document(user_id).get()
 
-        # Asegurar que el documento del usuario existe
         if not user_doc.exists:
             print(f"Creando documento para usuario: {user_id}")
             for attempt in range(3):

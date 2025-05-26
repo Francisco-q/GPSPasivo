@@ -1,12 +1,11 @@
 import axios from 'axios';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { QRCodeSVG as QRCode } from 'qrcode.react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
-import { QRCodeSVG as QRCode } from 'qrcode.react';
 
-// Corregir íconos predeterminados de Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -24,55 +23,51 @@ export default function Dashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [newPetName, setNewPetName] = useState('');
+  const [newPetPhoto, setNewPetPhoto] = useState('');
   const [error, setError] = useState(null);
-  //para centrar el mapa
   const [leafletMap, setLeafletMap] = useState(null);
 
   const navigate = useNavigate();
-
-  // Referencia para el elemento QR
   const qrRef = useRef(null);
-  // Función para descargar el QR como imagen
+
+  const handlePhotoUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError("La imagen debe ser menor a 5MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setNewPetPhoto(e.target?.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const downloadQRCode = () => {
     if (!qrRef.current) return;
-    
-    // Para QRCodeSVG, necesitamos convertir el SVG a imagen
     const svg = qrRef.current.querySelector("svg");
     if (!svg) return;
-    
-    // Crear un canvas para convertir SVG a imagen
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
-    
-    // Configurar el tamaño del canvas
     canvas.width = svg.width.baseVal.value;
     canvas.height = svg.height.baseVal.value;
-    
-    // Convertir SVG a imagen
     const data = new XMLSerializer().serializeToString(svg);
     const img = new Image();
-    
     img.onload = () => {
       ctx.drawImage(img, 0, 0);
-      
-      // Obtener el nombre de la mascota para el nombre del archivo
       const petName = pets.find((pet) => pet.id === selectedPet)?.name || 'mascota';
-      
-      // Configurar el enlace para descargar
       const link = document.createElement("a");
       link.download = `qr-${petName.toLowerCase().replace(/\s+/g, '-')}.png`;
       link.href = canvas.toDataURL("image/png");
-      
-      // Simular clic para iniciar la descarga
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
     };
-    
     img.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(data)))}`;
   };
 
-  // Función para realizar solicitudes con reintentos
   const fetchWithRetry = async (url, options, retries = 3, delay = 1000) => {
     for (let i = 0; i < retries; i++) {
       try {
@@ -91,21 +86,17 @@ export default function Dashboard() {
     }
   };
 
-  // Verificar autenticación al cargar el componente
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem('token');
       const storedUser = localStorage.getItem('user');
-
       console.log('Token almacenado:', token ? token.slice(0, 20) + '...' : 'No token');
       console.log('Usuario almacenado:', storedUser);
-
       if (!token || !storedUser) {
         setError('Sesión no encontrada. Por favor, inicia sesión nuevamente.');
         navigate('/login');
         return;
       }
-
       try {
         const userData = JSON.parse(storedUser);
         setUser(userData);
@@ -117,11 +108,9 @@ export default function Dashboard() {
       }
       setLoading(false);
     };
-
     checkAuth();
   }, [navigate]);
 
-  // Obtener mascotas del usuario
   useEffect(() => {
     const fetchPets = async () => {
       if (!user) return;
@@ -147,19 +136,16 @@ export default function Dashboard() {
           navigate('/login');
         } else if (error.response?.status === 404) {
           setError('Usuario no encontrado. Reintentando...');
-          // No redirigir, permitir reintentos
         } else {
           setError(error.response?.data?.error || 'No se pudieron cargar las mascotas. Por favor, intenta de nuevo.');
         }
       }
     };
-
     if (!loading) {
       fetchPets();
     }
   }, [loading, user, navigate]);
 
-  // Obtener ubicaciones del backend
   useEffect(() => {
     const fetchLocations = async () => {
       if (!user) return;
@@ -182,26 +168,22 @@ export default function Dashboard() {
           navigate('/login');
         } else if (error.response?.status === 404) {
           setError('Usuario no encontrado. Reintentando...');
-          // No redirigir, permitir reintentos
         } else {
           setError(error.response?.data?.error || 'No se pudieron cargar las ubicaciones. Por favor, intenta de nuevo.');
         }
       }
     };
-
     if (!loading) {
       fetchLocations();
     }
   }, [loading, user, navigate]);
 
-  // Manejar cierre de sesión
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     navigate('/login');
   };
 
-  // Componente para manejar clics en el mapa
   function AddLocation() {
     useMapEvents({
       click(e) {
@@ -245,7 +227,6 @@ export default function Dashboard() {
     return null;
   }
 
-  // Manejar agregar nueva mascota
   const handleAddPet = async () => {
     if (!newPetName) {
       setError('El nombre de la mascota es requerido.');
@@ -256,13 +237,24 @@ export default function Dashboard() {
       console.log('Enviando solicitud POST /pets con token:', token.slice(0, 20) + '...');
       const response = await axios.post(
         `http://localhost:5000/users/${user.user_id}/pets`,
-        { name: newPetName },
+        {
+          name: newPetName,
+          photo: newPetPhoto || null,
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
       console.log('Respuesta de POST /pets:', response.data);
       const newPet = response.data;
-      setPets((prev) => [...prev, { id: newPet.id, name: newPet.name }]);
+      setPets((prev) => [
+        ...prev,
+        {
+          id: newPet.id,
+          name: newPet.name,
+          photo: newPet.photo || null,  // Usar la URL del backend
+        },
+      ]);
       setNewPetName('');
+      setNewPetPhoto('');
       setModalOpen(false);
     } catch (error) {
       console.error('Error al agregar mascota:', error);
@@ -274,35 +266,30 @@ export default function Dashboard() {
       }
     }
   };
-  // Mostrar Ubicación más reciente en el mapa
+
   const lastLocation = useMemo(() => {
     if (locations.length === 0) return null;
-    return locations.reduce((latest, loc) =>
-      new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest
-    );
+    return locations.reduce((latest, loc) => (new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest));
   }, [locations]);
 
   useEffect(() => {
     if (leafletMap && lastLocation) {
-      leafletMap.flyTo([lastLocation.latitude, lastLocation.longitude], 15)
+      leafletMap.flyTo([lastLocation.latitude, lastLocation.longitude], 15);
     }
-  }, [leafletMap, lastLocation])
+  }, [leafletMap, lastLocation]);
 
-  //Icono para la ultima ubicación
-  const normalIcon =new L.Icon({
-      iconUrl: 'bluemark.png',
-      shadowUrl: 'shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-    })
+  const normalIcon = new L.Icon({
+    iconUrl: '/bluemark.png',
+    shadowUrl: '/shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
   const lastIcon = new L.Icon({
-      iconUrl: '/redmark.png',
-      shadowUrl: 'shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-  })
-
-
+    iconUrl: '/redmark.png',
+    shadowUrl: '/shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
 
   if (loading) {
     return (
@@ -312,11 +299,9 @@ export default function Dashboard() {
     );
   }
 
-
   return (
     <>
       <div className="min-h-screen bg-gray-100 relative z-10">
-        {/* Barra superior */}
         <div className="bg-white shadow relative z-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16 items-center">
@@ -333,23 +318,18 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
-        {/* Contenido principal */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
           <div className="bg-white shadow rounded-lg p-6">
             <h2 className="text-xl font-semibold mb-4">Panel de Control</h2>
             <p className="mb-4">
               Bienvenido al sistema de GPS Pasivo. Desde aquí podrás gestionar tus mascotas y ver sus ubicaciones.
             </p>
-
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
                 {error}
               </div>
             )}
-
             <div className="mt-6 space-y-6">
-              {/* Sección Mis Mascotas */}
               <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition relative z-10">
                 <h3 className="text-lg font-medium">Mis Mascotas</h3>
                 <p className="text-gray-600">Gestiona los perfiles de tus mascotas y sus códigos QR.</p>
@@ -360,16 +340,12 @@ export default function Dashboard() {
                   Agregar Mascota
                 </button>
               </div>
-
-              {/* Sección Ubicaciones con Mapa */}
               <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition relative z-10">
                 <h3 className="text-lg font-medium">Ubicaciones</h3>
                 <p className="text-gray-600">Visualiza en el mapa dónde se han escaneado los códigos QR.</p>
-
-                {/* Controles para agregar escaneo */}
                 <div className="mt-4 flex items-center space-x-4 relative z-20">
                   <select
-                    value={selectedPet || ''}
+                    value={selectedPet || ""}
                     onChange={(e) => setSelectedPet(e.target.value)}
                     className="border rounded px-2 py-1"
                   >
@@ -380,13 +356,39 @@ export default function Dashboard() {
                       </option>
                     ))}
                   </select>
+                  {selectedPet && (
+                    <div className="flex items-center space-x-2 bg-blue-50 px-3 py-2 rounded">
+                      <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100">
+                        {pets.find((p) => p.id === selectedPet)?.photo ? (
+                          <img
+                            src={pets.find((p) => p.id === selectedPet)?.photo || "/placeholder.svg"}
+                            alt="Pet"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-blue-200 to-purple-200"></div>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-blue-800">
+                        {pets.find((p) => p.id === selectedPet)?.name}
+                      </span>
+                    </div>
+                  )}
                   <button
                     onClick={() => setAddingLocation(true)}
                     disabled={!selectedPet || addingLocation}
                     className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition disabled:bg-gray-400"
                   >
-                    {addingLocation ? 'Haz clic en el mapa' : 'Agregar Escaneo'}
+                    {addingLocation ? "Haz clic en el mapa" : "Agregar Escaneo"}
                   </button>
+                  {addingLocation && (
+                    <button
+                      onClick={() => setAddingLocation(false)}
+                      className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition"
+                    >
+                      Cancelar
+                    </button>
+                  )}
                   <button
                     onClick={() => setQrModalOpen(true)}
                     disabled={!selectedPet}
@@ -395,14 +397,12 @@ export default function Dashboard() {
                     Ver QR
                   </button>
                 </div>
-
-                {/* Mapa */}
                 <div className="mt-4 h-96 relative z-10">
                   <MapContainer
-                    center={[-35.4075, -71.6369]} // Coordenadas del Campus Los Niches
+                    center={[-35.4075, -71.6369]}
                     zoom={15}
-                    style={{ height: '100%', width: '100%' }}
-                    whenReady={({target}) => setLeafletMap(target)}
+                    style={{ height: "100%", width: "100%" }}
+                    whenReady={({ target }) => setLeafletMap(target)}
                   >
                     <TileLayer
                       url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -410,17 +410,32 @@ export default function Dashboard() {
                     />
                     <AddLocation />
                     {locations.map((loc) => (
-                      <Marker key={`${loc.pet_id}-${loc.created_at}`} position={[loc.latitude, loc.longitude]}
-                      icon={lastLocation && lastLocation.created_at == loc.created_at ? lastIcon : normalIcon}
+                      <Marker
+                        key={`${loc.pet_id}-${loc.created_at}`}
+                        position={[loc.latitude, loc.longitude]}
+                        icon={lastLocation && lastLocation.created_at === loc.created_at ? lastIcon : normalIcon}
                       >
                         <Popup>
-                          <div>
-                            <strong>{loc.pet_name}</strong>
-                            {lastLocation.created_at === loc.created_at && (
-                              <p>Ultima ubicación registrada</p>
+                          <div className="text-center">
+                            {pets.find((p) => p.id === loc.pet_id)?.photo && (
+                              <div className="mb-2">
+                                <img
+                                  src={pets.find((p) => p.id === loc.pet_id)?.photo || "/placeholder.svg"}
+                                  alt={loc.pet_name}
+                                  className="w-16 h-16 rounded-full object-cover mx-auto border-2 border-blue-200"
+                                />
+                              </div>
                             )}
-                            <p>Escaneado: {new Date(loc.created_at).toLocaleString()}</p>
-                            <p>Lat: {loc.latitude.toFixed(4)}, Lng: {loc.longitude.toFixed(4)}</p>
+                            <strong>{loc.pet_name}</strong>
+                            {lastLocation && lastLocation.created_at === loc.created_at && (
+                              <p className="text-red-600 text-sm font-medium">Última ubicación registrada</p>
+                            )}
+                            <p className="text-sm text-gray-600">
+                              Escaneado: {new Date(loc.created_at).toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Lat: {loc.latitude.toFixed(4)}, Lng: {loc.longitude.toFixed(4)}
+                            </p>
                           </div>
                         </Popup>
                       </Marker>
@@ -432,12 +447,59 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* Modal para agregar mascota */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
             <h3 className="text-lg font-medium mb-4">Agregar Nueva Mascota</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Foto de la mascota (opcional)</label>
+              <div className="flex items-center space-x-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center border-2 border-gray-200">
+                  {newPetPhoto ? (
+                    <img src={newPetPhoto || "/placeholder.svg"} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
+                      />
+                    </svg>
+                  )}
+                </div>
+                <div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoUpload}
+                    className="hidden"
+                    id="photo-upload"
+                  />
+                  <label
+                    htmlFor="photo-upload"
+                    className="cursor-pointer bg-blue-50 text-blue-600 px-3 py-2 rounded text-sm hover:bg-blue-100 transition"
+                  >
+                    {newPetPhoto ? "Cambiar foto" : "Subir foto"}
+                  </label>
+                  {newPetPhoto && (
+                    <button
+                      type="button"
+                      onClick={() => setNewPetPhoto("")}
+                      className="ml-2 text-red-600 text-sm hover:text-red-800"
+                    >
+                      Quitar
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             <input
               type="text"
               value={newPetName}
@@ -462,21 +524,14 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
-      {/* Modal para mostrar QR */}
       {qrModalOpen && selectedPet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
             <h3 className="text-lg font-medium mb-4">
-              Código QR para {pets.find((pet) => pet.id === selectedPet)?.name || 'Mascota'}
+              Código QR para {pets.find((pet) => pet.id === selectedPet)?.name || "Mascota"}
             </h3>
             <div className="flex justify-center my-4" ref={qrRef}>
-              <QRCode
-                value={`http://localhost:5000/scan/${selectedPet}`}
-                size={200}
-                level="H"
-                includeMargin={true}
-              />
+              <QRCode value={`http://localhost:5000/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
             </div>
             <p className="text-sm text-gray-600 text-center mb-4">
               Escanea este código QR para registrar la ubicación de tu mascota.
