@@ -6,11 +6,87 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 
+// MUI imports
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Box,
+  Container,
+  Paper,
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Avatar,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  Stack,
+  CircularProgress,
+  Tooltip,
+  ThemeProvider,
+  createTheme,
+  CssBaseline,
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import LogoutIcon from '@mui/icons-material/Logout';
+import QrCodeIcon from '@mui/icons-material/QrCode';
+import CancelIcon from '@mui/icons-material/Cancel';
+import PhotoCamera from '@mui/icons-material/PhotoCamera';
+import DownloadIcon from '@mui/icons-material/Download';
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+// Paleta personalizada basada en #059669
+const theme = createTheme({
+  palette: {
+    primary: {
+      main: '#059669',
+      contrastText: '#fff',
+    },
+    secondary: {
+      main: '#10b981',
+      contrastText: '#fff',
+    },
+    success: {
+      main: '#059669',
+      contrastText: '#fff',
+    },
+    error: {
+      main: '#dc2626',
+      contrastText: '#fff',
+    },
+    background: {
+      default: '#f6fefb',
+      paper: '#ffffff',
+    },
+  },
+  components: {
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          background: 'linear-gradient(90deg, #059669 0%, #10b981 100%)',
+        },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+        },
+      },
+    },
+  },
 });
 
 export default function Dashboard() {
@@ -90,8 +166,6 @@ export default function Dashboard() {
     const checkAuth = () => {
       const token = localStorage.getItem('token');
       const storedUser = localStorage.getItem('user');
-      console.log('Token almacenado:', token ? token.slice(0, 20) + '...' : 'No token');
-      console.log('Usuario almacenado:', storedUser);
       if (!token || !storedUser) {
         setError('Sesión no encontrada. Por favor, inicia sesión nuevamente.');
         navigate('/login');
@@ -102,7 +176,6 @@ export default function Dashboard() {
         setUser(userData);
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       } catch (error) {
-        console.error('Error al parsear datos del usuario:', error);
         setError('Error al cargar los datos del usuario.');
         navigate('/login');
       }
@@ -116,7 +189,6 @@ export default function Dashboard() {
       if (!user) return;
       try {
         const token = localStorage.getItem('token');
-        console.log('Enviando solicitud GET /pets con token:', token.slice(0, 20) + '...');
         const response = await fetchWithRetry(
           `http://localhost:5000/users/${user.user_id}/pets`,
           {
@@ -124,13 +196,11 @@ export default function Dashboard() {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        console.log('Respuesta de GET /pets:', response.data);
         setPets(response.data);
         if (response.data.length > 0) {
           setSelectedPet(response.data[0].id);
         }
       } catch (error) {
-        console.error('Error al obtener mascotas:', error);
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
@@ -151,7 +221,6 @@ export default function Dashboard() {
       if (!user) return;
       try {
         const token = localStorage.getItem('token');
-        console.log('Enviando solicitud GET /locations con token:', token.slice(0, 20) + '...');
         const response = await fetchWithRetry(
           `http://localhost:5000/users/${user.user_id}/locations`,
           {
@@ -159,10 +228,8 @@ export default function Dashboard() {
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        console.log('Respuesta de GET /locations:', response.data);
         setLocations(response.data);
       } catch (error) {
-        console.error('Error al obtener ubicaciones:', error);
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
@@ -190,7 +257,6 @@ export default function Dashboard() {
         if (addingLocation && selectedPet) {
           const { lat, lng } = e.latlng;
           const token = localStorage.getItem('token');
-          console.log('Enviando solicitud POST /scan con token:', token.slice(0, 20) + '...');
           axios
             .post(
               `http://localhost:5000/scan/${selectedPet}`,
@@ -198,7 +264,6 @@ export default function Dashboard() {
               { headers: { Authorization: `Bearer ${token}` } }
             )
             .then((response) => {
-              console.log('Respuesta de POST /scan:', response.data);
               setLocations((prev) => [
                 ...prev,
                 {
@@ -212,7 +277,6 @@ export default function Dashboard() {
               setAddingLocation(false);
             })
             .catch((error) => {
-              console.error('Error al agregar ubicación:', error);
               if (error.response?.status === 401) {
                 setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
                 navigate('/login');
@@ -234,7 +298,6 @@ export default function Dashboard() {
     }
     try {
       const token = localStorage.getItem('token');
-      console.log('Enviando solicitud POST /pets con token:', token.slice(0, 20) + '...');
       const response = await axios.post(
         `http://localhost:5000/users/${user.user_id}/pets`,
         {
@@ -243,21 +306,19 @@ export default function Dashboard() {
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      console.log('Respuesta de POST /pets:', response.data);
       const newPet = response.data;
       setPets((prev) => [
         ...prev,
         {
           id: newPet.id,
           name: newPet.name,
-          photo: newPet.photo || null,  // Usar la URL del backend
+          photo: newPet.photo || null,
         },
       ]);
       setNewPetName('');
       setNewPetPhoto('');
       setModalOpen(false);
     } catch (error) {
-      console.error('Error al agregar mascota:', error);
       if (error.response?.status === 401) {
         setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
         navigate('/login');
@@ -293,266 +354,292 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-xl">Cargando...</div>
-      </div>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Box minHeight="100vh" display="flex" alignItems="center" justifyContent="center" bgcolor="background.default">
+          <CircularProgress size={48} color="primary" />
+        </Box>
+      </ThemeProvider>
     );
   }
 
   return (
-    <>
-      <div className="min-h-screen bg-gray-100 relative z-10">
-        <div className="bg-white shadow relative z-20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16 items-center">
-              <h1 className="text-2xl font-bold">GPS Pasivo</h1>
-              <div className="flex items-center">
-                <span className="mr-4">Hola, {user?.nombre || user?.email}</span>
-                <button
-                  onClick={handleLogout}
-                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition"
-                >
-                  Cerrar Sesión
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-          <div className="bg-white shadow rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Panel de Control</h2>
-            <p className="mb-4">
-              Bienvenido al sistema de GPS Pasivo. Desde aquí podrás gestionar tus mascotas y ver sus ubicaciones.
-            </p>
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
-                {error}
-              </div>
-            )}
-            <div className="mt-6 space-y-6">
-              <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition relative z-10">
-                <h3 className="text-lg font-medium">Mis Mascotas</h3>
-                <p className="text-gray-600">Gestiona los perfiles de tus mascotas y sus códigos QR.</p>
-                <button
-                  onClick={() => setModalOpen(true)}
-                  className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                >
-                  Agregar Mascota
-                </button>
-              </div>
-              <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition relative z-10">
-                <h3 className="text-lg font-medium">Ubicaciones</h3>
-                <p className="text-gray-600">Visualiza en el mapa dónde se han escaneado los códigos QR.</p>
-                <div className="mt-4 flex items-center space-x-4 relative z-20">
-                  <select
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <AppBar position="static" elevation={1}>
+        <Toolbar>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>
+            GPS Pasivo
+          </Typography>
+          <Typography variant="body1" sx={{ mr: 2 }}>
+            Hola, {user?.nombre || user?.email}
+          </Typography>
+          <Button
+            color="inherit"
+            startIcon={<LogoutIcon />}
+            onClick={handleLogout}
+            variant="outlined"
+            sx={{ borderColor: 'white', color: 'white', '&:hover': { borderColor: '#fff' } }}
+          >
+            Cerrar Sesión
+          </Button>
+        </Toolbar>
+      </AppBar>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
+          <Typography variant="h5" fontWeight="bold" gutterBottom color="primary">
+            Panel de Control
+          </Typography>
+          <Typography variant="body1" color="text.secondary" gutterBottom>
+            Bienvenido al sistema de GPS Pasivo. Desde aquí podrás gestionar tus mascotas y ver sus ubicaciones.
+          </Typography>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={4} mt={4}>
+            <Paper elevation={1} sx={{ flex: 1, p: 3, bgcolor: 'background.default' }}>
+              <Typography variant="h6" gutterBottom color="primary">
+                Mis Mascotas
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Gestiona los perfiles de tus mascotas y sus códigos QR.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                sx={{ mt: 2 }}
+                onClick={() => setModalOpen(true)}
+                color="primary"
+              >
+                Agregar Mascota
+              </Button>
+              <Box mt={3}>
+                <Stack direction="row" spacing={2} flexWrap="wrap">
+                  {pets.map((pet) => (
+                    <Box key={pet.id} display="flex" alignItems="center" sx={{ mb: 1 }}>
+                      <Avatar
+                        src={pet.photo || "/placeholder.svg"}
+                        alt={pet.name}
+                        sx={{ width: 48, height: 48, mr: 1, bgcolor: 'secondary.main' }}
+                      />
+                      <Typography variant="body1">{pet.name}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            </Paper>
+            <Paper elevation={1} sx={{ flex: 2, p: 3, bgcolor: 'background.default' }}>
+              <Typography variant="h6" gutterBottom color="primary">
+                Ubicaciones
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Visualiza en el mapa dónde se han escaneado los códigos QR.
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" mt={2}>
+                <FormControl sx={{ minWidth: 180 }}>
+                  <InputLabel>Selecciona una mascota</InputLabel>
+                  <Select
                     value={selectedPet || ""}
+                    label="Selecciona una mascota"
                     onChange={(e) => setSelectedPet(e.target.value)}
-                    className="border rounded px-2 py-1"
                   >
-                    <option value="">Selecciona una mascota</option>
+                    <MenuItem value="">
+                      <em>Selecciona una mascota</em>
+                    </MenuItem>
                     {pets.map((pet) => (
-                      <option key={pet.id} value={pet.id}>
+                      <MenuItem key={pet.id} value={pet.id}>
                         {pet.name}
-                      </option>
+                      </MenuItem>
                     ))}
-                  </select>
-                  {selectedPet && (
-                    <div className="flex items-center space-x-2 bg-blue-50 px-3 py-2 rounded">
-                      <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100">
-                        {pets.find((p) => p.id === selectedPet)?.photo ? (
-                          <img
-                            src={pets.find((p) => p.id === selectedPet)?.photo || "/placeholder.svg"}
-                            alt="Pet"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-blue-200 to-purple-200"></div>
-                        )}
-                      </div>
-                      <span className="text-sm font-medium text-blue-800">
-                        {pets.find((p) => p.id === selectedPet)?.name}
-                      </span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setAddingLocation(true)}
-                    disabled={!selectedPet || addingLocation}
-                    className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition disabled:bg-gray-400"
-                  >
-                    {addingLocation ? "Haz clic en el mapa" : "Agregar Escaneo"}
-                  </button>
-                  {addingLocation && (
-                    <button
-                      onClick={() => setAddingLocation(false)}
-                      className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition"
-                    >
-                      Cancelar
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setQrModalOpen(true)}
-                    disabled={!selectedPet}
-                    className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 transition disabled:bg-gray-400"
-                  >
-                    Ver QR
-                  </button>
-                </div>
-                <div className="mt-4 h-96 relative z-10">
-                  <MapContainer
-                    center={[-35.4075, -71.6369]}
-                    zoom={15}
-                    style={{ height: "100%", width: "100%" }}
-                    whenReady={({ target }) => setLeafletMap(target)}
-                  >
-                    <TileLayer
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  </Select>
+                </FormControl>
+                {selectedPet && (
+                  <Stack direction="row" alignItems="center" spacing={1} sx={{ bgcolor: '#e0f7f1', px: 2, py: 1, borderRadius: 2 }}>
+                    <Avatar
+                      src={pets.find((p) => p.id === selectedPet)?.photo || "/placeholder.svg"}
+                      alt="Pet"
+                      sx={{ width: 32, height: 32, bgcolor: 'secondary.main' }}
                     />
-                    <AddLocation />
-                    {locations.map((loc) => (
-                      <Marker
-                        key={`${loc.pet_id}-${loc.created_at}`}
-                        position={[loc.latitude, loc.longitude]}
-                        icon={lastLocation && lastLocation.created_at === loc.created_at ? lastIcon : normalIcon}
-                      >
-                        <Popup>
-                          <div className="text-center">
-                            {pets.find((p) => p.id === loc.pet_id)?.photo && (
-                              <div className="mb-2">
-                                <img
-                                  src={pets.find((p) => p.id === loc.pet_id)?.photo || "/placeholder.svg"}
-                                  alt={loc.pet_name}
-                                  className="w-16 h-16 rounded-full object-cover mx-auto border-2 border-blue-200"
-                                />
-                              </div>
-                            )}
-                            <strong>{loc.pet_name}</strong>
-                            {lastLocation && lastLocation.created_at === loc.created_at && (
-                              <p className="text-red-600 text-sm font-medium">Última ubicación registrada</p>
-                            )}
-                            <p className="text-sm text-gray-600">
-                              Escaneado: {new Date(loc.created_at).toLocaleString()}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Lat: {loc.latitude.toFixed(4)}, Lng: {loc.longitude.toFixed(4)}
-                            </p>
-                          </div>
-                        </Popup>
-                      </Marker>
-                    ))}
-                  </MapContainer>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
-            <h3 className="text-lg font-medium mb-4">Agregar Nueva Mascota</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Foto de la mascota (opcional)</label>
-              <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center border-2 border-gray-200">
-                  {newPetPhoto ? (
-                    <img src={newPetPhoto || "/placeholder.svg"} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                  )}
-                </div>
-                <div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoUpload}
-                    className="hidden"
-                    id="photo-upload"
-                  />
-                  <label
-                    htmlFor="photo-upload"
-                    className="cursor-pointer bg-blue-50 text-blue-600 px-3 py-2 rounded text-sm hover:bg-blue-100 transition"
-                  >
-                    {newPetPhoto ? "Cambiar foto" : "Subir foto"}
-                  </label>
-                  {newPetPhoto && (
-                    <button
-                      type="button"
-                      onClick={() => setNewPetPhoto("")}
-                      className="ml-2 text-red-600 text-sm hover:text-red-800"
+                    <Typography variant="body2" color="primary">
+                      {pets.find((p) => p.id === selectedPet)?.name}
+                    </Typography>
+                  </Stack>
+                )}
+                <Tooltip title="Agregar Escaneo">
+                  <span>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      onClick={() => setAddingLocation(true)}
+                      disabled={!selectedPet || addingLocation}
+                      startIcon={<AddIcon />}
                     >
-                      Quitar
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-            <input
-              type="text"
+                      {addingLocation ? "Haz clic en el mapa" : "Agregar Escaneo"}
+                    </Button>
+                  </span>
+                </Tooltip>
+                {addingLocation && (
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={() => setAddingLocation(false)}
+                    startIcon={<CancelIcon />}
+                  >
+                    Cancelar
+                  </Button>
+                )}
+                <Tooltip title="Ver QR">
+                  <span>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      onClick={() => setQrModalOpen(true)}
+                      disabled={!selectedPet}
+                      startIcon={<QrCodeIcon />}
+                    >
+                      Ver QR
+                    </Button>
+                  </span>
+                </Tooltip>
+              </Stack>
+              <Box mt={3} height={384} borderRadius={2} overflow="hidden" sx={{ border: '1px solid #e0e0e0' }}>
+                <MapContainer
+                  center={[-35.4075, -71.6369]}
+                  zoom={15}
+                  style={{ height: "100%", width: "100%" }}
+                  whenReady={({ target }) => setLeafletMap(target)}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  <AddLocation />
+                  {locations.map((loc) => (
+                    <Marker
+                      key={`${loc.pet_id}-${loc.created_at}`}
+                      position={[loc.latitude, loc.longitude]}
+                      icon={lastLocation && lastLocation.created_at === loc.created_at ? lastIcon : normalIcon}
+                    >
+                      <Popup>
+                        <Box textAlign="center">
+                          {pets.find((p) => p.id === loc.pet_id)?.photo && (
+                            <Box mb={1}>
+                              <Avatar
+                                src={pets.find((p) => p.id === loc.pet_id)?.photo || "/placeholder.svg"}
+                                alt={loc.pet_name}
+                                sx={{ width: 64, height: 64, mx: "auto", mb: 1, border: "2px solid #059669" }}
+                              />
+                            </Box>
+                          )}
+                          <Typography fontWeight="bold">{loc.pet_name}</Typography>
+                          {lastLocation && lastLocation.created_at === loc.created_at && (
+                            <Typography color="error" fontSize={14} fontWeight="medium">
+                              Última ubicación registrada
+                            </Typography>
+                          )}
+                          <Typography fontSize={13} color="text.secondary">
+                            Escaneado: {new Date(loc.created_at).toLocaleString()}
+                          </Typography>
+                          <Typography fontSize={12} color="text.disabled">
+                            Lat: {loc.latitude.toFixed(4)}, Lng: {loc.longitude.toFixed(4)}
+                          </Typography>
+                        </Box>
+                      </Popup>
+                    </Marker>
+                  ))}
+                </MapContainer>
+              </Box>
+            </Paper>
+          </Stack>
+        </Paper>
+      </Container>
+      {/* Modal para agregar mascota */}
+      <Dialog open={modalOpen} onClose={() => setModalOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Agregar Nueva Mascota</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} mt={1}>
+            <Box display="flex" alignItems="center" gap={2}>
+              <Avatar
+                src={newPetPhoto || "/placeholder.svg"}
+                alt="Preview"
+                sx={{ width: 64, height: 64, bgcolor: '#e0f7f1', border: '2px solid #059669' }}
+              />
+              <input
+                accept="image/*"
+                style={{ display: 'none' }}
+                id="photo-upload"
+                type="file"
+                onChange={handlePhotoUpload}
+              />
+              <label htmlFor="photo-upload">
+                <Button
+                  variant="outlined"
+                  component="span"
+                  startIcon={<PhotoCamera />}
+                  size="small"
+                  color="primary"
+                >
+                  {newPetPhoto ? "Cambiar foto" : "Subir foto"}
+                </Button>
+              </label>
+              {newPetPhoto && (
+                <Button
+                  variant="text"
+                  color="error"
+                  size="small"
+                  onClick={() => setNewPetPhoto("")}
+                >
+                  Quitar
+                </Button>
+              )}
+            </Box>
+            <TextField
+              label="Nombre de la mascota"
               value={newPetName}
               onChange={(e) => setNewPetName(e.target.value)}
-              placeholder="Nombre de la mascota"
-              className="border rounded px-2 py-1 mb-4 w-full"
+              fullWidth
+              required
             />
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleAddPet}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-              >
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {qrModalOpen && selectedPet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white p-6 rounded shadow-lg relative z-50 max-w-sm w-full">
-            <h3 className="text-lg font-medium mb-4">
-              Código QR para {pets.find((pet) => pet.id === selectedPet)?.name || "Mascota"}
-            </h3>
-            <div className="flex justify-center my-4" ref={qrRef}>
-              <QRCode value={`http://localhost:5000/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
-            </div>
-            <p className="text-sm text-gray-600 text-center mb-4">
-              Escanea este código QR para registrar la ubicación de tu mascota.
-            </p>
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={downloadQRCode}
-                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
-              >
-                Descargar QR
-              </button>
-              <button
-                onClick={() => setQrModalOpen(false)}
-                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setModalOpen(false)} color="inherit">
+            Cancelar
+          </Button>
+          <Button onClick={handleAddPet} variant="contained" color="primary">
+            Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Modal para QR */}
+      <Dialog open={qrModalOpen && !!selectedPet} onClose={() => setQrModalOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          Código QR para {pets.find((pet) => pet.id === selectedPet)?.name || "Mascota"}
+        </DialogTitle>
+        <DialogContent>
+          <Box display="flex" justifyContent="center" my={2} ref={qrRef}>
+            <QRCode value={`http://localhost:5000/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
+          </Box>
+          <Typography variant="body2" color="text.secondary" align="center" mb={2}>
+            Escanea este código QR para registrar la ubicación de tu mascota.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={downloadQRCode}
+            variant="contained"
+            color="success"
+            startIcon={<DownloadIcon />}
+          >
+            Descargar QR
+          </Button>
+          <Button onClick={() => setQrModalOpen(false)} color="inherit">
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </ThemeProvider>
   );
 }
