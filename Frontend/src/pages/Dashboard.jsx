@@ -620,7 +620,7 @@ export default function Dashboard() {
         </DialogTitle>
         <DialogContent>
           <Box display="flex" justifyContent="center" my={2} ref={qrRef}>
-            <QRCode value={`http://localhost:5000/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
+            <QRCode value={`http://192.168.2.106:5173/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
           </Box>
           <Typography variant="body2" color="text.secondary" align="center" mb={2}>
             Escanea este código QR para registrar la ubicación de tu mascota.

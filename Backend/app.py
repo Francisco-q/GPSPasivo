@@ -231,6 +231,18 @@ def get_locations(user_id):
 
     return jsonify(locations), 200
 
+@app.route('/pets/<pet_id>', methods=['GET'])
+def get_pet(pet_id):
+    # Buscar la mascota en todas las colecciones de usuarios
+    users_ref = db.collection('users').stream()
+    for user in users_ref:
+        pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
+        if pet_ref.exists:
+            pet_data = pet_ref.to_dict()
+            pet_data['id'] = pet_id
+            return jsonify(pet_data), 200
+    return jsonify({'error': 'Mascota no encontrada'}), 404
+
 @app.route('/register', methods=['POST'])
 def signup():
     try:
