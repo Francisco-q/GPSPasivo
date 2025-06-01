@@ -5,6 +5,7 @@ import { QRCodeSVG as QRCode } from 'qrcode.react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
+import API_CONFIG from '../config/api';
 
 // MUI imports
 import {
@@ -190,17 +191,26 @@ export default function Dashboard() {
       try {
         const token = localStorage.getItem('token');
         const response = await fetchWithRetry(
-          `http://localhost:5000/users/${user.user_id}/pets`,
+          `${API_CONFIG.BACKEND_URL}/users/${user.user_id}/pets`,
           {
             method: 'GET',
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        setPets(response.data);
-        if (response.data.length > 0) {
-          setSelectedPet(response.data[0].id);
+        console.log("red")
+        
+        // Verificar que la respuesta sea un array
+        const petsData = Array.isArray(response.data) ? response.data : [];
+        setPets(petsData);
+        
+        if (petsData.length > 0) {
+          setSelectedPet(petsData[0].id);
         }
       } catch (error) {
+        console.error('Error fetching pets:', error);
+        // Asegurar que pets sea un array en caso de error
+        setPets([]);
+        
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
@@ -222,14 +232,21 @@ export default function Dashboard() {
       try {
         const token = localStorage.getItem('token');
         const response = await fetchWithRetry(
-          `http://localhost:5000/users/${user.user_id}/locations`,
+          `${API_CONFIG.BACKEND_URL}/users/${user.user_id}/locations`,
           {
             method: 'GET',
             headers: { Authorization: `Bearer ${token}` },
           }
         );
-        setLocations(response.data);
+        
+        // Verificar que la respuesta sea un array
+        const locationsData = Array.isArray(response.data) ? response.data : [];
+        setLocations(locationsData);
       } catch (error) {
+        console.error('Error fetching locations:', error);
+        // Asegurar que locations sea un array en caso de error
+        setLocations([]);
+        
         if (error.response?.status === 401) {
           setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
           navigate('/login');
@@ -259,7 +276,7 @@ export default function Dashboard() {
           const token = localStorage.getItem('token');
           axios
             .post(
-              `http://localhost:5000/scan/${selectedPet}`,
+              `${API_CONFIG.BACKEND_URL}/scan/${selectedPet}`,
               { latitude: lat, longitude: lng },
               { headers: { Authorization: `Bearer ${token}` } }
             )
@@ -298,15 +315,22 @@ export default function Dashboard() {
     }
     try {
       const token = localStorage.getItem('token');
+      console.log("Guardando mascota:", newPetName);
+      
       const response = await axios.post(
-        `http://localhost:5000/users/${user.user_id}/pets`,
+        `${API_CONFIG.BACKEND_URL}/users/${user.user_id}/pets`,
         {
           name: newPetName,
           photo: newPetPhoto || null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      
+      console.log("Mascota guardada, respuesta:", response.data);
+      
       const newPet = response.data;
+      
+      // Agregar la nueva mascota al estado local
       setPets((prev) => [
         ...prev,
         {
@@ -315,10 +339,29 @@ export default function Dashboard() {
           photo: newPet.photo || null,
         },
       ]);
+      
+      // Limpiar el formulario
       setNewPetName('');
       setNewPetPhoto('');
       setModalOpen(false);
+      
+      // IMPORTANTE: Hacer refetch desde el servidor para verificar que se guardó
+      setTimeout(async () => {
+        try {
+          console.log("Haciendo refetch de mascotas...");
+          const refetchResponse = await axios.get(
+            `${API_CONFIG.BACKEND_URL}/users/${user.user_id}/pets`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          console.log("Refetch completado:", refetchResponse.data);
+          setPets(refetchResponse.data);
+        } catch (refetchError) {
+          console.error("Error en refetch:", refetchError);
+        }
+      }, 1000); // Esperar 1 segundo para que Firestore sincronice
+      
     } catch (error) {
+      console.error("Error al guardar mascota:", error);
       if (error.response?.status === 401) {
         setError('Sesión inválida. Por favor, inicia sesión nuevamente.');
         navigate('/login');
@@ -328,10 +371,17 @@ export default function Dashboard() {
     }
   };
 
+  const filteredLocations = useMemo(() => {
+    if (!selectedPet || locations.length === 0) return [];
+    return locations.filter((loc) => loc.pet_id === selectedPet);
+  }, [locations, selectedPet]);
+
   const lastLocation = useMemo(() => {
-    if (locations.length === 0) return null;
-    return locations.reduce((latest, loc) => (new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest));
-  }, [locations]);
+    if (filteredLocations.length === 0) return null;
+    return filteredLocations.reduce((latest, loc) => 
+      (new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest)
+    );
+  }, [filteredLocations]);
 
   useEffect(() => {
     if (leafletMap && lastLocation) {
@@ -465,44 +515,26 @@ export default function Dashboard() {
                     <Typography variant="body2" color="primary">
                       {pets.find((p) => p.id === selectedPet)?.name}
                     </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ({filteredLocations.length} ubicaciones)
+                    </Typography>
                   </Stack>
                 )}
-                <Tooltip title="Agregar Escaneo">
-                  <span>
-                    <Button
-                      variant="contained"
-                      color="success"
-                      onClick={() => setAddingLocation(true)}
-                      disabled={!selectedPet || addingLocation}
-                      startIcon={<AddIcon />}
-                    >
-                      {addingLocation ? "Haz clic en el mapa" : "Agregar Escaneo"}
-                    </Button>
-                  </span>
-                </Tooltip>
-                {addingLocation && (
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    onClick={() => setAddingLocation(false)}
-                    startIcon={<CancelIcon />}
-                  >
-                    Cancelar
-                  </Button>
+                {selectedPet && (
+                  <Stack direction="row" spacing={1}>
+                    <Tooltip title="Ver código QR">
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<QrCodeIcon />}
+                        onClick={() => setQrModalOpen(true)}
+                        sx={{ color: 'white', background: '#059669' }}
+                      >
+                        Mostrar QR
+                      </Button>
+                    </Tooltip>
+                  </Stack>
                 )}
-                <Tooltip title="Ver QR">
-                  <span>
-                    <Button
-                      variant="contained"
-                      color="secondary"
-                      onClick={() => setQrModalOpen(true)}
-                      disabled={!selectedPet}
-                      startIcon={<QrCodeIcon />}
-                    >
-                      Ver QR
-                    </Button>
-                  </span>
-                </Tooltip>
               </Stack>
               <Box mt={3} height={384} borderRadius={2} overflow="hidden" sx={{ border: '1px solid #e0e0e0' }}>
                 <MapContainer
@@ -516,7 +548,8 @@ export default function Dashboard() {
                     attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
                   <AddLocation />
-                  {locations.map((loc) => (
+                  {/* Mostrar solo las ubicaciones de la mascota seleccionada */}
+                  {filteredLocations.map((loc) => (
                     <Marker
                       key={`${loc.pet_id}-${loc.created_at}`}
                       position={[loc.latitude, loc.longitude]}
@@ -549,6 +582,26 @@ export default function Dashboard() {
                       </Popup>
                     </Marker>
                   ))}
+                  {/* Mensaje cuando no hay ubicaciones para la mascota seleccionada */}
+                  {selectedPet && filteredLocations.length === 0 && (
+                    <Box
+                      position="absolute"
+                      top="50%"
+                      left="50%"
+                      sx={{ 
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 1000,
+                        bgcolor: 'rgba(255, 255, 255, 0.9)',
+                        p: 2,
+                        borderRadius: 2,
+                        boxShadow: 2
+                      }}
+                    >
+                      <Typography variant="body2" color="text.secondary" textAlign="center">
+                        No hay ubicaciones registradas para {pets.find((p) => p.id === selectedPet)?.name}
+                      </Typography>
+                    </Box>
+                  )}
                 </MapContainer>
               </Box>
             </Paper>
@@ -620,7 +673,7 @@ export default function Dashboard() {
         </DialogTitle>
         <DialogContent>
           <Box display="flex" justifyContent="center" my={2} ref={qrRef}>
-            <QRCode value={`http://192.168.2.106:5173/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
+            <QRCode value={`${API_CONFIG.FRONTEND_URL}/scan/${selectedPet}`} size={200} level="H" includeMargin={true} />
           </Box>
           <Typography variant="body2" color="text.secondary" align="center" mb={2}>
             Escanea este código QR para registrar la ubicación de tu mascota.

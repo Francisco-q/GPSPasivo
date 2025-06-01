@@ -44,48 +44,55 @@ export default function Login() {
       console.error('Error en login:', err);
       setError(err.response?.data?.error || 'Error al iniciar sesión. Por favor, verifica tus credenciales.');
     }
-  };  return (
+  };
+
+  return (
     <div className="min-h-screen flex items-center justify-center" style={{ 
       backgroundImage: `url(${fondologin})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center'
     }}>
-      <div className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl shadow-lg w-full max-w-md border border-blue-200">
-        <h2 className="text-2xl font-bold text-center mb-6 text-blue-800">Iniciar Sesión</h2>
-        {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
+      <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg w-full max-w-md border border-emerald-200">
+        <h2 className="text-2xl font-bold text-center mb-6 text-emerald-800">Iniciar Sesión</h2>
+        {error && <p className="text-red-500 text-sm mb-4 text-center bg-red-50 p-3 rounded-lg border border-red-200">{error}</p>}
 
-        <form onSubmit={handleSubmit}>          <div className="mb-4">
-            <label className="block text-blue-800">Correo electrónico</label>
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-emerald-800 font-medium mb-2">Correo electrónico</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-3 border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/90"
+              className="w-full p-3 border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white/95 transition-all duration-200"
               placeholder="tucorreo@ejemplo.com"
               required
             />
           </div>
 
           <div className="mb-6">
-            <label className="block text-blue-800">Contraseña</label>
+            <label className="block text-emerald-800 font-medium mb-2">Contraseña</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-3 border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white/90"
+              className="w-full p-3 border border-emerald-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white/95 transition-all duration-200"
               placeholder="••••••••"
               required
             />
-          </div>          <button
+          </div>
+
+          <button
             type="submit"
-            className="w-full bg-blue-700 text-white py-3 rounded-xl hover:bg-blue-800 transition shadow-md"
+            className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 text-white py-3 rounded-xl hover:from-emerald-700 hover:to-emerald-800 transition-all duration-200 shadow-md hover:shadow-lg font-medium"
           >
             Entrar
           </button>
 
-          <p className="text-sm text-center mt-4 text-blue-900">
+          <p className="text-sm text-center mt-4 text-emerald-900">
             ¿No tienes cuenta?
-            <Link to="/register" className="text-blue-700 hover:underline ml-1 font-semibold">Regístrate</Link>
+            <Link to="/register" className="text-emerald-700 hover:text-emerald-800 hover:underline ml-1 font-semibold transition-colors duration-200">
+              Regístrate
+            </Link>
           </p>
         </form>
       </div>

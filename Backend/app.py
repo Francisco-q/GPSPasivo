@@ -11,7 +11,6 @@ import uuid
 from dotenv import find_dotenv, load_dotenv
 from pathlib import Path
 import time
-
 import requests
 
 # Cargar variables de entorno desde el archivo .env
@@ -19,7 +18,17 @@ env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(env_path)
 
 app = Flask(__name__)
-CORS(app)
+# Configurar CORS más específicamente para manejar ngrok y localhost
+CORS(app, 
+     origins=[
+         "https://192.168.2.106:5173", 
+         "http://localhost:5173", 
+         "https://localhost:5173",
+         os.environ.get('FRONTEND_URL', 'https://192.168.2.106:5173')
+     ],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
+     supports_credentials=True)
 
 # Configurar carpeta para almacenar imágenes
 UPLOAD_FOLDER = 'uploads'
@@ -37,6 +46,29 @@ except Exception as e:
 
 # Obtener instancia de Firestore
 db = firestore.client()
+
+def get_base_url():
+    """Obtiene la URL base del servidor (ngrok o localhost)"""
+    # Primero intenta obtener la URL de ngrok desde las variables de entorno
+    ngrok_url = os.environ.get('NGROK_URL')
+    if ngrok_url:
+        return ngrok_url
+    
+    # Si no está en el .env, intenta obtenerla de la API de ngrok
+    try:
+        response = requests.get('http://localhost:4040/api/tunnels', timeout=2)
+        tunnels = response.json()
+        
+        for tunnel in tunnels['tunnels']:
+            if tunnel['proto'] == 'https':
+                url = tunnel['public_url']
+                print(f"URL de ngrok detectada automáticamente: {url}")
+                return url
+    except Exception as e:
+        print(f"No se pudo obtener URL de ngrok automáticamente: {e}")
+    
+    # Fallback a localhost
+    return "http://localhost:5000"
 
 # Servir imágenes desde la carpeta uploads
 @app.route('/uploads/<filename>')
@@ -57,17 +89,27 @@ def auth_required(f):
             decoded_token = auth.verify_id_token(id_token)
             request.uid = decoded_token['uid']
             print(f"Token verificado correctamente para UID: {request.uid}")
+            
+            # Verificar que el usuario existe en Firestore con reintentos
             user_doc = None
             for attempt in range(3):
-                user_doc = db.collection('users').document(request.uid).get()
-                if user_doc.exists:
-                    break
-                print(f"Intento {attempt + 1}: Documento de usuario no encontrado para UID: {request.uid}")
-                if attempt < 2:
-                    time.sleep(1)
-                else:
-                    print(f"Error: Documento de usuario no encontrado para UID: {request.uid}")
-                    return jsonify({'error': 'User document not found'}), 404
+                try:
+                    user_doc = db.collection('users').document(request.uid).get()
+                    if user_doc.exists:
+                        break
+                    print(f"Intento {attempt + 1}: Documento de usuario no encontrado para UID: {request.uid}")
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        print(f"Error: Documento de usuario no encontrado para UID: {request.uid}")
+                        return jsonify({'error': 'User document not found'}), 404
+                except Exception as e:
+                    print(f"Error al verificar documento de usuario: {str(e)}")
+                    if attempt < 2:
+                        time.sleep(1)
+                    else:
+                        return jsonify({'error': 'Database connection error'}), 500
+                        
         except auth.InvalidIdTokenError as e:
             print(f"Error de autenticación: Token inválido - {str(e)}")
             return jsonify({'error': 'Invalid token'}), 401
@@ -130,34 +172,65 @@ def add_pet(user_id):
             # Guardar la imagen en el sistema de archivos
             with open(file_path, 'wb') as f:
                 f.write(image_data)
-            # Construir la URL para la imagen
-            photo_url = f"http://localhost:5000/uploads/{filename}"
+            # Construir la URL para la imagen usando la URL base correcta de ngrok
+            base_url = get_base_url()
+            photo_url = f"{base_url}/uploads/{filename}"
+            print(f"Imagen guardada en: {photo_url}")
         except Exception as e:
             print(f"Error al guardar la imagen: {str(e)}")
             return jsonify({"error": "Error al guardar la imagen"}), 500
 
-    # Generar el código QR
-    qr_content = f"https://miapp.com/scan/{pet_id}"
+    # Generar el código QR con la URL correcta del frontend
+    frontend_url = os.environ.get('FRONTEND_URL', 'https://192.168.2.106:5173')
+    qr_content = f"{frontend_url}/scan/{pet_id}"
     qr = qrcode.make(qr_content)
     buffer = BytesIO()
     qr.save(buffer, format="PNG")
     qr_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
-    # Guardar los datos de la mascota en Firestore
-    new_pet_ref.set({
+    # Preparar los datos de la mascota
+    pet_data = {
         'name': pet_name,
         'photo': photo_url if photo_url else None,
         'qr_code': qr_base64,
         'created_at': firestore.SERVER_TIMESTAMP
-    })
+    }
 
-    return jsonify({
+    # Guardar los datos de la mascota en Firestore con reintentos y verificación
+    for attempt in range(3):
+        try:
+            print(f"Intento {attempt + 1} de guardar mascota: {pet_name}")
+            new_pet_ref.set(pet_data)
+            
+            # Verificar que se guardó correctamente
+            time.sleep(0.5)  # Pequeña pausa para que Firestore procese
+            saved_pet = new_pet_ref.get()
+            if saved_pet.exists:
+                saved_data = saved_pet.to_dict()
+                print(f"Mascota guardada correctamente: {pet_id} - {saved_data.get('name')}")
+                break
+            else:
+                raise Exception("La mascota no se guardó en Firestore")
+                
+        except Exception as e:
+            print(f"Intento {attempt + 1} fallido al guardar mascota: {str(e)}")
+            if attempt < 2:
+                time.sleep(1)
+            else:
+                print(f"Error crítico: No se pudo guardar la mascota después de 3 intentos")
+                return jsonify({"error": "No se pudo guardar la mascota"}), 500
+
+    # Respuesta exitosa
+    response_data = {
         "id": pet_id,
         "name": pet_name,
         "photo": photo_url if photo_url else None,
         "qr_content": qr_content,
         "qr_code_base64": qr_base64[:50] + "..."
-    }), 201
+    }
+    
+    print(f"Respuesta enviada: {response_data}")
+    return jsonify(response_data), 201
 
 @app.route('/users/<user_id>/pets', methods=['GET'])
 @auth_required
@@ -168,9 +241,25 @@ def get_pets(user_id):
 
     for attempt in range(3):
         try:
-            pets_ref = db.collection('users').document(user_id).collection('pets').stream()
-            pets = [{"id": pet.id, "name": pet.to_dict().get('name', 'Desconocido'), "photo": pet.to_dict().get('photo', None)} for pet in pets_ref]
+            print(f"Intento {attempt + 1} de obtener mascotas para user_id: {user_id}")
+            pets_ref = db.collection('users').document(user_id).collection('pets')
+            pets_stream = pets_ref.stream()
+            pets = []
+            
+            for pet in pets_stream:
+                pet_data = pet.to_dict()
+                print(f"Mascota encontrada en Firestore: {pet.id} - {pet_data.get('name', 'Sin nombre')}")
+                pet_info = {
+                    "id": pet.id,
+                    "name": pet_data.get('name', 'Desconocido'),
+                    "photo": pet_data.get('photo', None)
+                }
+                pets.append(pet_info)
+            
+            print(f"Total de mascotas encontradas: {len(pets)}")
+            print(f"Lista completa: {[p['name'] for p in pets]}")
             return jsonify(pets), 200
+            
         except Exception as e:
             print(f"Intento {attempt + 1} fallido al obtener mascotas: {str(e)}")
             if attempt < 2:
@@ -183,27 +272,42 @@ def scan_qr(pet_id):
     data = request.get_json()
     latitude = data.get('latitude')
     longitude = data.get('longitude')
+    message = data.get('message', '')
 
     if latitude is None or longitude is None:
         return jsonify({'error': 'latitude y longitude son requeridos'}), 400
 
-    db.collection('locations').document(pet_id).collection('ubicaciones').add({
-        'latitude': latitude,
-        'longitude': longitude,
-        'created_at': datetime.utcnow()
-    })
+    try:
+        # Guardar la ubicación
+        location_data = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'message': message,
+            'created_at': datetime.utcnow()
+        }
+        
+        db.collection('locations').document(pet_id).collection('ubicaciones').add(location_data)
+        print(f"Ubicación guardada para mascota {pet_id}: ({latitude}, {longitude})")
 
-    users_ref = db.collection('users').stream()
-    owner_email = None
-    for user in users_ref:
-        pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
-        if pet_ref.exists:
-            owner_email = db.collection('users').document(user.id).get().to_dict().get('email')
-            break
+        # Buscar el dueño de la mascota
+        users_ref = db.collection('users').stream()
+        owner_email = None
+        for user in users_ref:
+            pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
+            if pet_ref.exists:
+                owner_data = db.collection('users').document(user.id).get().to_dict()
+                owner_email = owner_data.get('email') if owner_data else None
+                break
 
-    print(f"[NOTIFICACIÓN] Escaneo de {pet_id} en ({latitude}, {longitude}) para {owner_email}")
+        print(f"[NOTIFICACIÓN] Escaneo de {pet_id} en ({latitude}, {longitude}) para {owner_email}")
+        if message:
+            print(f"[MENSAJE] {message}")
 
-    return jsonify({'message': 'Ubicación registrada correctamente'}), 200
+        return jsonify({'message': 'Ubicación registrada correctamente'}), 200
+        
+    except Exception as e:
+        print(f"Error al registrar ubicación: {str(e)}")
+        return jsonify({'error': 'Error al registrar la ubicación'}), 500
 
 @app.route('/users/<user_id>/locations', methods=['GET'])
 @auth_required
@@ -212,36 +316,49 @@ def get_locations(user_id):
         print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
         return jsonify({'error': 'No autorizado'}), 403
 
-    pets_ref = db.collection('users').document(user_id).collection('pets').stream()
-    locations = []
+    try:
+        pets_ref = db.collection('users').document(user_id).collection('pets').stream()
+        locations = []
 
-    for pet in pets_ref:
-        pet_id = pet.id
-        pet_name = pet.to_dict().get('name', 'Desconocido')
-        locations_ref = db.collection('locations').document(pet_id).collection('ubicaciones').stream()
-        for loc in locations_ref:
-            loc_data = loc.to_dict()
-            locations.append({
-                'pet_id': pet_id,
-                'pet_name': pet_name,
-                'latitude': loc_data['latitude'],
-                'longitude': loc_data['longitude'],
-                'created_at': loc_data['created_at'].isoformat()
-            })
+        for pet in pets_ref:
+            pet_id = pet.id
+            pet_name = pet.to_dict().get('name', 'Desconocido')
+            locations_ref = db.collection('locations').document(pet_id).collection('ubicaciones').order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+            
+            for loc in locations_ref:
+                loc_data = loc.to_dict()
+                locations.append({
+                    'pet_id': pet_id,
+                    'pet_name': pet_name,
+                    'latitude': loc_data['latitude'],
+                    'longitude': loc_data['longitude'],
+                    'message': loc_data.get('message', ''),
+                    'created_at': loc_data['created_at'].isoformat() if loc_data.get('created_at') else None
+                })
 
-    return jsonify(locations), 200
+        return jsonify(locations), 200
+        
+    except Exception as e:
+        print(f"Error al obtener ubicaciones: {str(e)}")
+        return jsonify({'error': 'Error al obtener ubicaciones'}), 500
 
 @app.route('/pets/<pet_id>', methods=['GET'])
 def get_pet(pet_id):
-    # Buscar la mascota en todas las colecciones de usuarios
-    users_ref = db.collection('users').stream()
-    for user in users_ref:
-        pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
-        if pet_ref.exists:
-            pet_data = pet_ref.to_dict()
-            pet_data['id'] = pet_id
-            return jsonify(pet_data), 200
-    return jsonify({'error': 'Mascota no encontrada'}), 404
+    try:
+        # Buscar la mascota en todas las colecciones de usuarios
+        users_ref = db.collection('users').stream()
+        for user in users_ref:
+            pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
+            if pet_ref.exists:
+                pet_data = pet_ref.to_dict()
+                pet_data['id'] = pet_id
+                return jsonify(pet_data), 200
+        
+        return jsonify({'error': 'Mascota no encontrada'}), 404
+        
+    except Exception as e:
+        print(f"Error al buscar mascota: {str(e)}")
+        return jsonify({'error': 'Error al buscar la mascota'}), 500
 
 @app.route('/register', methods=['POST'])
 def signup():
@@ -273,6 +390,7 @@ def signup():
                     'nombre': nombre,
                     'created_at': firestore.SERVER_TIMESTAMP
                 })
+                time.sleep(0.5)  # Pausa para que Firestore procese
                 if user_ref.get().exists:
                     print(f"Documento creado para UID: {user.uid}")
                     break
@@ -375,6 +493,7 @@ def login():
                         'nombre': response_data.get('displayName', ''),
                         'created_at': firestore.SERVER_TIMESTAMP
                     })
+                    time.sleep(0.5)  # Pausa para que Firestore procese
                     if db.collection('users').document(user_id).get().exists:
                         break
                     else:
@@ -399,5 +518,18 @@ def login():
         print(f"Error en login: {str(e)}")
         return jsonify({"error": "Error interno del servidor"}), 500
 
+# Ruta para obtener la URL actual del servidor (útil para debugging)
+@app.route('/api/server-info', methods=['GET'])
+def get_server_info():
+    base_url = get_base_url()
+    return jsonify({
+        "base_url": base_url,
+        "frontend_url": os.environ.get('FRONTEND_URL', 'https://192.168.2.106:5173'),
+        "environment": "development" if app.debug else "production"
+    })
+
 if __name__ == '__main__':
+    print(f"Servidor iniciando...")
+    print(f"URL base detectada: {get_base_url()}")
+    print(f"Frontend URL: {os.environ.get('FRONTEND_URL', 'https://192.168.2.106:5173')}")
     app.run(debug=True, host='0.0.0.0', port=5000)

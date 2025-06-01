@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API_CONFIG from '../config/api';
 import {
   Box,
   Paper,
@@ -36,10 +37,11 @@ export default function ScanPet() {
   useEffect(() => {
     const fetchPet = async () => {
       try {
-        const res = await axios.get(`http://192.168.2.106:5000/pets/${petId}`);
+        const res = await axios.get(`${API_CONFIG.BACKEND_URL}/pets/${petId}`);
         setPet(res.data);
       } catch (err) {
         setError('No se pudo encontrar la mascota.');
+        console.error('Error al cargar mascota:', err);
       } finally {
         setLoading(false);
       }
@@ -64,9 +66,9 @@ export default function ScanPet() {
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
-          // Enviar solicitud POST al servidor
+          // Enviar solicitud POST al servidor con la URL actualizada
           await axios.post(
-            `http://192.168.2.106:5000/scan/${petId}`,
+            `${API_CONFIG.BACKEND_URL}/scan/${petId}`,
             {
               latitude,
               longitude,
@@ -114,7 +116,7 @@ export default function ScanPet() {
     );
   }
 
-  if (error) {
+  if (error && !pet) {
     return (
       <Container maxWidth="sm" sx={{ mt: 6 }}>
         <Paper sx={{ p: 3, textAlign: 'center' }}>
@@ -173,28 +175,30 @@ export default function ScanPet() {
             <Typography color="success.main" fontWeight="medium" mb={1}>
               ¡Código QR escaneado con éxito!
             </Typography>
-            <Box
-              sx={{
-                mt: 1,
-                textAlign: 'left',
-                bgcolor: 'background.paper',
-                p: 2,
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'grey.200',
-                width: '100%',
-                maxWidth: 320,
-                mx: 'auto',
-              }}
-            >
-              <Typography fontWeight="medium">Mascota encontrada:</Typography>
-              <Typography variant="body2" color="text.secondary">
-                {pet.name} ({pet.breed || 'Sin raza'})
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Dueño: {pet.owner || 'Desconocido'}
-              </Typography>
-            </Box>
+            {pet && (
+              <Box
+                sx={{
+                  mt: 1,
+                  textAlign: 'left',
+                  bgcolor: 'background.paper',
+                  p: 2,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: 'grey.200',
+                  width: '100%',
+                  maxWidth: 320,
+                  mx: 'auto',
+                }}
+              >
+                <Typography fontWeight="medium">Mascota encontrada:</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {pet.name} ({pet.breed || 'Sin raza'})
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Dueño: {pet.owner || 'Desconocido'}
+                </Typography>
+              </Box>
+            )}
           </Stack>
         </Box>
         <Stack spacing={2} mb={2}>
@@ -237,7 +241,7 @@ export default function ScanPet() {
             fullWidth
             size={isXs ? "small" : "medium"}
             onClick={handleSendLocation}
-            disabled={sending}
+            disabled={sending || !pet}
           >
             {sending ? "Enviando..." : "Enviar ubicación"}
           </Button>
