@@ -7,39 +7,35 @@ import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaf
 import { useNavigate } from 'react-router-dom';
 
 // MUI imports
+import AddIcon from '@mui/icons-material/Add';
+import CancelIcon from '@mui/icons-material/Cancel';
+import DownloadIcon from '@mui/icons-material/Download';
+import LogoutIcon from '@mui/icons-material/Logout';
+import PersonIcon from '@mui/icons-material/Person';
+import PhotoCamera from '@mui/icons-material/PhotoCamera';
+import QrCodeIcon from '@mui/icons-material/QrCode';
 import {
-  AppBar,
-  Toolbar,
-  Typography,
-  Button,
-  Box,
-  Container,
-  Paper,
   Alert,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
+  AppBar,
   Avatar,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
-  Stack,
+  Box,
+  Button,
   CircularProgress,
-  Tooltip,
-  ThemeProvider,
+  Container,
   createTheme,
   CssBaseline,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Paper,
+  Stack,
+  TextField,
+  ThemeProvider,
+  Toolbar,
+  Tooltip,
+  Typography,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import LogoutIcon from '@mui/icons-material/Logout';
-import QrCodeIcon from '@mui/icons-material/QrCode';
-import CancelIcon from '@mui/icons-material/Cancel';
-import PhotoCamera from '@mui/icons-material/PhotoCamera';
-import DownloadIcon from '@mui/icons-material/Download';
-import PersonIcon from '@mui/icons-material/Person';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -329,14 +325,23 @@ export default function Dashboard() {
     }
   };
 
+  const handlePetClick = (petId) => {
+    setSelectedPet(petId);
+  };
+
+  const filteredLocations = useMemo(() => {
+    if (!selectedPet) return locations;
+    return locations.filter((loc) => loc.pet_id === selectedPet);
+  }, [locations, selectedPet]);
+
   const lastLocation = useMemo(() => {
-    if (locations.length === 0) return null;
-    return locations.reduce((latest, loc) => (new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest));
-  }, [locations]);
+    if (filteredLocations.length == 0) return null;
+    return filteredLocations.reduce((latest, loc) => (new Date(loc.created_at) > new Date(latest.created_at) ? loc : latest));
+  }, [filteredLocations]);
 
   useEffect(() => {
     if (leafletMap && lastLocation) {
-      leafletMap.flyTo([lastLocation.latitude, lastLocation.longitude], 15);
+      leafletMap.flyTo([lastLocation.latitude, lastLocation.longitude], 17);
     }
   }, [leafletMap, lastLocation]);
 
@@ -374,7 +379,8 @@ export default function Dashboard() {
           </Typography>
           <Typography variant="body1" sx={{ mr: 2 }}>
             Hola, {user?.nombre || user?.email}
-          </Typography>          <Button
+          </Typography>
+          <Button
             color="inherit"
             startIcon={<PersonIcon />}
             onClick={() => navigate('/profile')}
@@ -427,14 +433,28 @@ export default function Dashboard() {
               <Box mt={3}>
                 <Stack direction="row" spacing={2} flexWrap="wrap">
                   {pets.map((pet) => (
-                    <Box key={pet.id} display="flex" alignItems="center" sx={{ mb: 1 }}>
-                      <Avatar
-                        src={pet.photo || "/placeholder.svg"}
-                        alt={pet.name}
-                        sx={{ width: 48, height: 48, mr: 1, bgcolor: 'secondary.main' }}
-                      />
-                      <Typography variant="body1">{pet.name}</Typography>
-                    </Box>
+                    <Button
+                      key={pet.id}
+                      variant={selectedPet === pet.id ? "contained" : "outlined"}
+                      color="primary"
+                      onClick={() => handlePetClick(pet.id)}
+                      sx={{
+                        mb: 1,
+                        textTransform: 'none',
+                        justifyContent: 'flex-start',
+                        borderRadius: 2,
+                        bgcolor: selectedPet === pet.id ? 'primary.main' : 'background.paper',
+                      }}
+                    >
+                      <Box display="flex" alignItems="center">
+                        <Avatar
+                          src={pet.photo || "/placeholder.svg"}
+                          alt={pet.name}
+                          sx={{ width: 48, height: 48, mr: 1, bgcolor: 'secondary.main' }}
+                        />
+                        <Typography variant="body1">{pet.name}</Typography>
+                      </Box>
+                    </Button>
                   ))}
                 </Stack>
               </Box>
@@ -447,23 +467,6 @@ export default function Dashboard() {
                 Visualiza en el mapa dónde se han escaneado los códigos QR.
               </Typography>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" mt={2}>
-                <FormControl sx={{ minWidth: 180 }}>
-                  <InputLabel>Selecciona una mascota</InputLabel>
-                  <Select
-                    value={selectedPet || ""}
-                    label="Selecciona una mascota"
-                    onChange={(e) => setSelectedPet(e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>Selecciona una mascota</em>
-                    </MenuItem>
-                    {pets.map((pet) => (
-                      <MenuItem key={pet.id} value={pet.id}>
-                        {pet.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
                 {selectedPet && (
                   <Stack direction="row" alignItems="center" spacing={1} sx={{ bgcolor: '#e0f7f1', px: 2, py: 1, borderRadius: 2 }}>
                     <Avatar
@@ -525,7 +528,7 @@ export default function Dashboard() {
                     attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   />
                   <AddLocation />
-                  {locations.map((loc) => (
+                  {filteredLocations.map((loc) => (
                     <Marker
                       key={`${loc.pet_id}-${loc.created_at}`}
                       position={[loc.latitude, loc.longitude]}
