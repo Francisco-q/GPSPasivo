@@ -145,7 +145,6 @@ export default function ScanPet() {
         </Typography>
         <Box
           sx={{
-            aspectRatio: '16/9',
             bgcolor: 'grey.100',
             borderRadius: 3,
             display: 'flex',
@@ -154,7 +153,7 @@ export default function ScanPet() {
             mb: 3,
             position: 'relative',
             overflow: 'hidden',
-            minHeight: { xs: 160, sm: 200 },
+            minHeight: { xs: 100, sm: 200 },
           }}
         >
           <Stack alignItems="center" width="100%">
@@ -168,6 +167,7 @@ export default function ScanPet() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 mb: 1,
+                
               }}
             >
               <CheckCircleIcon sx={{ fontSize: 40, color: 'success.main' }} />
@@ -188,29 +188,32 @@ export default function ScanPet() {
                   width: '100%',
                   maxWidth: 320,
                   mx: 'auto',
+                  minHeight: 200,
                 }}
               >
                 <Typography fontWeight="medium">Mascota encontrada:</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {pet.name} ({pet.breed || 'Sin raza'})
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Dueño: {pet.owner || 'Desconocido'}
-                </Typography>
+                {pet.owner && (
+                  <>
+                    <Typography fontWeight="medium" mt={2}>Datos del dueño:</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Nombre: {pet.owner.nombre || 'Desconocido'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Email: {pet.owner.email || 'Desconocido'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Teléfono: {pet.owner.phone || 'No registrado'}
+                    </Typography>
+                  </>
+                )}
               </Box>
             )}
           </Stack>
         </Box>
         <Stack spacing={2} mb={2}>
-          <TextField
-            label="Mensaje para el dueño (opcional)"
-            multiline
-            rows={3}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            fullWidth
-            size={isXs ? "small" : "medium"}
-          />
           <FormControlLabel
             control={
               <Switch

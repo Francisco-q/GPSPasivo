@@ -342,7 +342,6 @@ def get_locations(user_id):
     except Exception as e:
         print(f"Error al obtener ubicaciones: {str(e)}")
         return jsonify({'error': 'Error al obtener ubicaciones'}), 500
-
 @app.route('/pets/<pet_id>', methods=['GET'])
 def get_pet(pet_id):
     try:
@@ -353,6 +352,17 @@ def get_pet(pet_id):
             if pet_ref.exists:
                 pet_data = pet_ref.to_dict()
                 pet_data['id'] = pet_id
+                # Obtener datos del dueño
+                owner_doc = db.collection('users').document(user.id).get()
+                if owner_doc.exists:
+                    owner_data = owner_doc.to_dict()
+                    pet_data['owner'] = {
+                        'nombre': owner_data.get('nombre', ''),
+                        'email': owner_data.get('email', ''),
+                        'phone': owner_data.get('phone', '')
+                    }
+                else:
+                    pet_data['owner'] = None
                 return jsonify(pet_data), 200
         
         return jsonify({'error': 'Mascota no encontrada'}), 404
