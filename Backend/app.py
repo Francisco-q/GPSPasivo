@@ -21,6 +21,7 @@ app = Flask(__name__)
 # Configurar CORS más específicamente para manejar ngrok y localhost
 CORS(app, 
      origins=[
+         "https://192.168.134.148:5173",
          "https://192.168.2.106:5173", 
          "http://localhost:5173", 
          "https://localhost:5173",
