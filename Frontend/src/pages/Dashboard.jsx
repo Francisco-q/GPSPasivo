@@ -474,7 +474,7 @@ export default function Dashboard() {
                 Agregar Mascota
               </Button>
               <Box mt={3}>
-                <Stack direction="row" spacing={2} flexWrap="wrap">
+                <Stack direction="column" spacing={2}>
                   {pets.map((pet) => (
                     <Button
                       key={pet.id}
