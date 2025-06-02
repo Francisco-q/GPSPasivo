@@ -387,5 +387,127 @@ def login():
         print(f"Error en login: {str(e)}")
         return jsonify({"error": "Error interno del servidor"}), 500
 
+@app.route('/users/<user_id>/profile', methods=['GET'])
+@auth_required
+def get_profile(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+
+    try:
+        user_doc = db.collection('users').document(user_id).get()
+        if not user_doc.exists:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        
+        user_data = user_doc.to_dict()
+        return jsonify({
+            'email': user_data.get('email', ''),
+            'nombre': user_data.get('nombre', ''),
+            'phone': user_data.get('phone', '')
+        }), 200
+    except Exception as e:
+        print(f"Error al obtener perfil: {str(e)}")
+        return jsonify({'error': 'Error al obtener perfil'}), 500
+
+@app.route('/users/<user_id>/profile', methods=['PUT'])
+@auth_required
+def update_profile(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+
+    data = request.get_json()
+    email = data.get('email')
+    phone = data.get('phone', '')
+
+    if not email:
+        return jsonify({"error": "El campo email es obligatorio"}), 400
+
+    try:
+        # Verificar si el email ha cambiado
+        user_doc = db.collection('users').document(user_id).get()
+        if not user_doc.exists:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        
+        current_email = user_doc.to_dict().get('email', '')
+        
+        # Si el email ha cambiado, actualizar en Firebase Auth
+        if email != current_email:
+            try:
+                auth.update_user(user_id, email=email)
+            except auth.EmailAlreadyExistsError:
+                return jsonify({"error": "El correo ya está en uso por otra cuenta"}), 409
+            except Exception as auth_error:
+                print(f"Error al actualizar email en Auth: {str(auth_error)}")
+                return jsonify({"error": f"Error al actualizar email: {str(auth_error)}"}), 500
+        
+        # Actualizar en Firestore
+        db.collection('users').document(user_id).update({
+            'email': email,
+            'phone': phone,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        return jsonify({
+            'message': 'Perfil actualizado correctamente',
+            'email': email,
+            'phone': phone
+        }), 200
+    
+    except Exception as e:
+        print(f"Error al actualizar perfil: {str(e)}")
+        return jsonify({'error': 'Error al actualizar perfil'}), 500
+
+@app.route('/users/<user_id>/password', methods=['PUT'])
+@auth_required
+def change_password(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+
+    data = request.get_json()
+    current_password = data.get('currentPassword')
+    new_password = data.get('newPassword')
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Se requieren la contraseña actual y la nueva"}), 400
+
+    try:
+        # Verificar la contraseña actual
+        FIREBASE_API_KEY = os.environ.get('FIREBASE_API_KEY')
+        if not FIREBASE_API_KEY:
+            return jsonify({"error": "Configuración del servidor incompleta"}), 500
+
+        # Obtener el email del usuario
+        user_doc = db.collection('users').document(user_id).get()
+        if not user_doc.exists:
+            return jsonify({'error': 'Usuario no encontrado'}), 404
+        
+        email = user_doc.to_dict().get('email')
+        
+        # Verificar las credenciales actuales
+        url = f'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={FIREBASE_API_KEY}'
+        response = requests.post(url, json={
+            'email': email,
+            'password': current_password,
+            'returnSecureToken': True
+        })
+
+        if response.status_code != 200:
+            return jsonify({"error": "Contraseña actual incorrecta"}), 401
+
+        # Actualizar la contraseña
+        auth.update_user(user_id, password=new_password)
+        
+        return jsonify({
+            'message': 'Contraseña actualizada correctamente'
+        }), 200
+    
+    except auth.InvalidPasswordError:
+        return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
+    except Exception as e:
+        print(f"Error al cambiar contraseña: {str(e)}")
+        return jsonify({'error': 'Error al cambiar contraseña'}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

@@ -39,6 +39,7 @@ import QrCodeIcon from '@mui/icons-material/QrCode';
 import CancelIcon from '@mui/icons-material/Cancel';
 import PhotoCamera from '@mui/icons-material/PhotoCamera';
 import DownloadIcon from '@mui/icons-material/Download';
+import PersonIcon from '@mui/icons-material/Person';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -373,7 +374,15 @@ export default function Dashboard() {
           </Typography>
           <Typography variant="body1" sx={{ mr: 2 }}>
             Hola, {user?.nombre || user?.email}
-          </Typography>
+          </Typography>          <Button
+            color="inherit"
+            startIcon={<PersonIcon />}
+            onClick={() => navigate('/profile')}
+            variant="outlined"
+            sx={{ borderColor: 'white', color: 'white', '&:hover': { borderColor: '#fff' }, mr: 2 }}
+          >
+            Mi Perfil
+          </Button>
           <Button
             color="inherit"
             startIcon={<LogoutIcon />}
