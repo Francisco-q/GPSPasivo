@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import fondologin from '../assets/fondologin.png';
+import Notifications from '../components/Notifications';
 import {
   AppBar,
   Toolbar,
@@ -22,6 +23,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PersonIcon from '@mui/icons-material/Person';
 import SaveIcon from '@mui/icons-material/Save';
 import KeyIcon from '@mui/icons-material/Key';
+import API_CONFIG from '../config/api';
 
 // Paleta personalizada basada en #059669 (igual que en Dashboard)
 const theme = createTheme({
@@ -93,7 +95,7 @@ export default function Profile() {
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
         
         // Obtener datos actualizados del usuario
-        axios.get(`http://localhost:5000/users/${userData.user_id}/profile`)
+        axios.get(`${API_CONFIG.BACKEND_URL}/users/${userData.user_id}/profile`)
           .then(response => {
             setPhone(response.data.phone || '');
             setLoading(false);
@@ -115,7 +117,7 @@ export default function Profile() {
     setSuccess('');
     
     try {
-      const response = await axios.put(`http://localhost:5000/users/${user.user_id}/profile`, {
+      const response = await axios.put(`${API_CONFIG.BACKEND_URL}/users/${user.user_id}/profile`, {
         email,
         phone
       });
@@ -145,7 +147,7 @@ export default function Profile() {
     }
 
     try {
-      await axios.put(`http://localhost:5000/users/${user.user_id}/password`, {
+      await axios.put(`${API_CONFIG.BACKEND_URL}/users/${user.user_id}/password`, {
         currentPassword,
         newPassword
       });
@@ -171,12 +173,12 @@ export default function Profile() {
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AppBar position="static" elevation={1}>
+      <CssBaseline />      <AppBar position="static" elevation={1}>
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             GPS Pasivo - Mi Perfil
           </Typography>
+          <Notifications />
           <Button
             color="inherit"
             startIcon={<ArrowBackIcon />}

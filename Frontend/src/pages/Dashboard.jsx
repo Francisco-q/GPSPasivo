@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
 import API_CONFIG from '../config/api';
+import Notifications from '../components/Notifications';
 
 // MUI imports
 import AddIcon from '@mui/icons-material/Add';
@@ -30,6 +31,7 @@ import {
   DialogContent,
   DialogTitle,
   Paper,
+  Snackbar,
   Stack,
   TextField,
   ThemeProvider,
@@ -95,11 +97,12 @@ export default function Dashboard() {
   const [selectedPet, setSelectedPet] = useState(null);
   const [addingLocation, setAddingLocation] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [newPetName, setNewPetName] = useState('');
+  const [qrModalOpen, setQrModalOpen] = useState(false);  const [newPetName, setNewPetName] = useState('');
   const [newPetPhoto, setNewPetPhoto] = useState('');
   const [error, setError] = useState(null);
   const [leafletMap, setLeafletMap] = useState(null);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [toastOpen, setToastOpen] = useState(false);
 
   const navigate = useNavigate();
   const qrRef = useRef(null);
@@ -256,8 +259,42 @@ export default function Dashboard() {
     };
     if (!loading) {
       fetchLocations();
+    }  }, [loading, user, navigate]);
+
+  // Función para obtener el contador de notificaciones sin leer
+  const fetchNotificationCount = async () => {
+    if (!user || !user.user_id) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(
+        `${API_CONFIG.BACKEND_URL}/users/${user.user_id}/notifications/count`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+      
+      const count = response.data.unread_count || 0;
+      setNotificationCount(count);
+      
+      // Mostrar el Toast solo si hay notificaciones sin leer
+      if (count > 0) {
+        setToastOpen(true);
+      }
+    } catch (err) {
+      console.error('Error al obtener contador de notificaciones:', err);
     }
-  }, [loading, user, navigate]);
+  };
+
+  // Cargar contador de notificaciones cuando el usuario esté disponible
+  useEffect(() => {
+    if (user) {
+      fetchNotificationCount();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -415,14 +452,14 @@ export default function Dashboard() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AppBar position="static" elevation={1}>
-        <Toolbar>
+      <AppBar position="static" elevation={1}>        <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
             GPS Pasivo
           </Typography>
           <Typography variant="body1" sx={{ mr: 2 }}>
             Hola, {user?.nombre || user?.email}
           </Typography>
+          <Notifications />
           <Button
             color="inherit"
             startIcon={<PersonIcon />}
@@ -694,9 +731,29 @@ export default function Dashboard() {
           </Button>
           <Button onClick={() => setQrModalOpen(false)} color="inherit">
             Cerrar
-          </Button>
-        </DialogActions>
+          </Button>        </DialogActions>
       </Dialog>
+      
+      {/* Toast de notificaciones */}
+      <Snackbar
+        open={toastOpen}
+        autoHideDuration={6000}
+        onClose={() => setToastOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={() => setToastOpen(false)} 
+          severity="info" 
+          variant="filled"
+          sx={{ width: '100%', cursor: 'pointer' }}
+          onClick={() => {
+            navigate('/notifications');
+            setToastOpen(false);
+          }}
+        >
+          Tienes {notificationCount} {notificationCount === 1 ? 'notificación' : 'notificaciones'} sin leer
+        </Alert>
+      </Snackbar>
     </ThemeProvider>
   );
 }

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import fondologin from '../assets/fondologin.png';
+import API_CONFIG from '../config/api';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -12,7 +13,7 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/login', {
+      const response = await axios.post(`${API_CONFIG.BACKEND_URL}/login`, {
         email,
         password,
       });
@@ -32,6 +33,11 @@ export default function Login() {
           user_id: response.data.user_id,
         })
       );
+
+      // Guardar información sobre notificaciones no leídas
+      if (response.data.unread_notifications !== undefined) {
+        sessionStorage.setItem('unread_notifications', response.data.unread_notifications);
+      }
 
       // Configurar el token en axios para solicitudes futuras
       axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;

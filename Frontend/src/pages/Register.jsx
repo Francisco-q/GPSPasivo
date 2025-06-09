@@ -2,6 +2,7 @@ import axios from 'axios';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import fondologin from '../assets/fondologin.png';
+import API_CONFIG from '../config/api';
 
 export default function Register() {
   const [nombre, setNombre] = useState('');
@@ -20,7 +21,7 @@ export default function Register() {
     }
 
     try {
-      const response = await axios.post('http://localhost:5000/register', {
+      const response = await axios.post(`${API_CONFIG.BACKEND_URL}/register`, {
         nombre,
         email,
         password,

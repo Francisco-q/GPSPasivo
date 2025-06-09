@@ -12,20 +12,33 @@ from dotenv import find_dotenv, load_dotenv
 from pathlib import Path
 import time
 import requests
+import locale
 
 # Cargar variables de entorno desde el archivo .env
 env_path = Path(__file__).resolve().parent / '.env'
 load_dotenv(env_path)
+
+# Configurar locale para formateo de fechas en español
+try:
+    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
+except locale.Error:
+    try:
+        locale.setlocale(locale.LC_TIME, 'es_ES')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_TIME, 'es')
+        except locale.Error:
+            print("No se pudo configurar el locale en español, usando locale por defecto")
 
 app = Flask(__name__)
 # Configurar CORS más específicamente para manejar ngrok y localhost
 CORS(app, 
      origins=[
          "https://192.168.134.148:5173",
-         "https://192.168.2.106:5173", 
+         "https://192.168.1.6:5173", 
          "http://localhost:5173", 
          "https://localhost:5173",
-         os.environ.get('FRONTEND_URL', 'https://192.168.2.106:5173')
+         os.environ.get('FRONTEND_URL', 'https://192.168.1.6:5173')
      ],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
      allow_headers=["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
@@ -280,25 +293,106 @@ def scan_qr(pet_id):
 
     try:
         # Guardar la ubicación
+        timestamp_now = datetime.utcnow()
         location_data = {
             'latitude': latitude,
             'longitude': longitude,
             'message': message,
-            'created_at': datetime.utcnow()
+            'created_at': timestamp_now
         }
         
         db.collection('locations').document(pet_id).collection('ubicaciones').add(location_data)
         print(f"Ubicación guardada para mascota {pet_id}: ({latitude}, {longitude})")
 
-        # Buscar el dueño de la mascota
+        # Buscar el dueño de la mascota y los datos de la mascota
         users_ref = db.collection('users').stream()
+        owner_id = None
         owner_email = None
+        pet_name = None
+        
+        print(f"[DEBUG] Buscando dueño para mascota {pet_id}")
         for user in users_ref:
             pet_ref = db.collection('users').document(user.id).collection('pets').document(pet_id).get()
             if pet_ref.exists:
+                pet_data = pet_ref.to_dict()
+                pet_name = pet_data.get('name', 'Desconocido')
                 owner_data = db.collection('users').document(user.id).get().to_dict()
+                owner_id = user.id
                 owner_email = owner_data.get('email') if owner_data else None
+                print(f"[DEBUG] Dueño encontrado: {owner_id} ({owner_email}), mascota: {pet_name}")
                 break
+        
+        if not owner_id:
+            print(f"[ERROR] No se encontró dueño para la mascota {pet_id}")
+            # Retornar éxito ya que la ubicación se guardó, aunque no se pueda notificar
+            return jsonify({'message': 'Ubicación registrada, pero no se pudo notificar al dueño'}), 200
+        
+        # Crear notificación para el dueño
+        if owner_id and pet_name:
+            # Formatear fecha y hora de escaneo en español
+            try:
+                formatted_date = timestamp_now.strftime('%d de %B de %Y')
+                formatted_time = timestamp_now.strftime('%H:%M')
+            except Exception as e:
+                print(f"Error al formatear fecha: {str(e)}")
+                formatted_date = timestamp_now.strftime('%d/%m/%Y')
+                formatted_time = timestamp_now.strftime('%H:%M')
+            
+            # Crear mensaje más informativo con geolocalización aproximada
+            location_str = f"Lat: {latitude:.6f}, Lng: {longitude:.6f}"
+            
+            # Intentar obtener dirección aproximada usando reverse geocoding
+            address_info = ""
+            try:
+                # Usar API de Nominatim para obtener dirección aproximada
+                geocoding_url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}&zoom=18&addressdetails=1"
+                geocoding_response = requests.get(geocoding_url, timeout=5, headers={'User-Agent': 'GPSPasivo/1.0'})
+                if geocoding_response.status_code == 200:
+                    geocoding_data = geocoding_response.json()
+                    display_name = geocoding_data.get('display_name', '')
+                    if display_name:
+                        # Obtener partes relevantes de la dirección
+                        address = geocoding_data.get('address', {})
+                        road = address.get('road', '')
+                        city = address.get('city', address.get('town', address.get('village', '')))
+                        
+                        if road and city:
+                            address_info = f" cerca de {road}, {city}"
+                        elif city:
+                            address_info = f" en {city}"
+                        elif road:
+                            address_info = f" cerca de {road}"
+            except Exception as geo_error:
+                print(f"Error al obtener información de geolocalización: {str(geo_error)}")
+            
+            base_message = f"¡{pet_name} escaneada{address_info} a las {formatted_time}!"
+            
+            notification_data = {
+                'pet_id': pet_id,
+                'pet_name': pet_name,
+                'message': base_message,
+                'latitude': latitude,
+                'longitude': longitude,
+                'location_info': address_info if address_info else location_str,
+                'user_message': message if message else None,
+                'created_at': timestamp_now,
+                'fecha_hora': timestamp_now.isoformat(),
+                'leido': False,
+                'type': 'pet_scan'
+            }
+            
+            # Guardar la notificación en Firestore con reintentos
+            for attempt in range(3):
+                try:
+                    notification_ref = db.collection('users').document(owner_id).collection('notifications').add(notification_data)
+                    print(f"[NOTIFICACIÓN CREADA] Para usuario {owner_id}: {notification_data['message']}")
+                    break
+                except Exception as e:
+                    print(f"Intento {attempt + 1} fallido al crear notificación: {str(e)}")
+                    if attempt < 2:
+                        time.sleep(0.5)
+                    else:
+                        print(f"Error crítico: No se pudo crear la notificación después de 3 intentos")
 
         print(f"[NOTIFICACIÓN] Escaneo de {pet_id} en ({latitude}, {longitude}) para {owner_email}")
         if message:
@@ -308,6 +402,7 @@ def scan_qr(pet_id):
         
     except Exception as e:
         print(f"Error al registrar ubicación: {str(e)}")
+        return jsonify({'error': 'Error al registrar la ubicación'}), 500
         return jsonify({'error': 'Error al registrar la ubicación'}), 500
 
 @app.route('/users/<user_id>/locations', methods=['GET'])
@@ -513,16 +608,25 @@ def login():
                     print(f"Intento {attempt + 1} fallido al crear documento de usuario: {str(e)}")
                     if attempt < 2:
                         time.sleep(1)
-                    else:
-                        return jsonify({"error": "No se pudo crear el documento del usuario"}), 500
+                    else:                        return jsonify({"error": "No se pudo crear el documento del usuario"}), 500
 
-        print(f"Login exitoso para user_id: {user_id}")
+        # Contar notificaciones no leídas
+        unread_count = 0
+        try:
+            unread_query = db.collection('users').document(user_id).collection('notifications').where('leido', '==', False)
+            unread_docs = unread_query.stream()
+            unread_count = sum(1 for _ in unread_docs)
+        except Exception as e:
+            print(f"Error al contar notificaciones no leídas: {str(e)}")
+
+        print(f"Login exitoso para user_id: {user_id}, notificaciones no leídas: {unread_count}")
         return jsonify({
             "message": "Login exitoso",
             "user_id": user_id,
             "email": email,
             "nombre": user_doc.to_dict().get('nombre', '') if user_doc.exists else response_data.get('displayName', ''),
-            "token": response_data['idToken']
+            "token": response_data['idToken'],
+            "unread_notifications": unread_count
         }), 200
 
     except Exception as e:
@@ -650,6 +754,184 @@ def change_password(user_id):
     except Exception as e:
         print(f"Error al cambiar contraseña: {str(e)}")
         return jsonify({'error': 'Error al cambiar contraseña'}), 500
+
+# Rutas para gestionar notificaciones
+@app.route('/users/<user_id>/notifications', methods=['GET'])
+@auth_required
+def get_notifications(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    # Parámetro para filtrar notificaciones
+    only_unread = request.args.get('unread', 'false').lower() == 'true'
+    
+    try:
+        notifications_ref = db.collection('users').document(user_id).collection('notifications')
+          # Aplicar filtro si se solicitan solo las no leídas
+        if only_unread:
+            query = notifications_ref.where('leido', '==', False)
+        else:
+            query = notifications_ref
+        
+        # Ordenar por fecha de creación (más recientes primero)
+        notifications_stream = query.order_by('created_at', direction=firestore.Query.DESCENDING).stream()
+        
+        notifications = []
+        for notification in notifications_stream:
+            notification_data = notification.to_dict()
+            notification_data['id'] = notification.id
+            notifications.append(notification_data)
+          # Contar notificaciones no leídas
+        unread_count = 0
+        if not only_unread:  # Solo contar si estamos recuperando todas
+            unread_count = len([n for n in notifications if n.get('leido') == False])
+        
+        print(f"Recuperadas {len(notifications)} notificaciones para el usuario {user_id}")
+        return jsonify({
+            'notifications': notifications,
+            'unread_count': unread_count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener notificaciones: {str(e)}")
+        return jsonify({'error': 'Error al obtener notificaciones'}), 500
+
+@app.route('/users/<user_id>/notifications/<notification_id>', methods=['PUT'])
+@auth_required
+def update_notification(user_id, notification_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    data = request.get_json()
+    leido = data.get('leido')
+    
+    if leido is None:
+        return jsonify({"error": "El campo 'leido' es requerido"}), 400
+    
+    try:
+        notification_ref = db.collection('users').document(user_id).collection('notifications').document(notification_id)
+        
+        # Verificar que la notificación existe
+        notification_doc = notification_ref.get()
+        if not notification_doc.exists:
+            return jsonify({'error': 'Notificación no encontrada'}), 404
+        
+        # Actualizar el estado de la notificación
+        notification_ref.update({
+            'leido': leido,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        })
+        
+        print(f"Notificación {notification_id} actualizada con estado leído: {leido}")
+        return jsonify({'message': 'Notificación actualizada correctamente'}), 200
+        
+    except Exception as e:
+        print(f"Error al actualizar notificación: {str(e)}")
+        return jsonify({'error': 'Error al actualizar notificación'}), 500
+
+@app.route('/users/<user_id>/notifications/count', methods=['GET'])
+@auth_required
+def get_notification_count(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    try:        # Contar notificaciones no leídas
+        unread_query = db.collection('users').document(user_id).collection('notifications').where('leido', '==', False)
+        unread_docs = unread_query.stream()
+        unread_count = sum(1 for _ in unread_docs)
+        
+        print(f"Usuario {user_id} tiene {unread_count} notificaciones sin leer")
+        return jsonify({'unread_count': unread_count}), 200
+        
+    except Exception as e:
+        print(f"Error al obtener conteo de notificaciones: {str(e)}")
+        return jsonify({'error': 'Error al obtener conteo de notificaciones'}), 500
+
+@app.route('/users/<user_id>/notifications/mark-all-read', methods=['PUT'])
+@auth_required
+def mark_all_notifications_read(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    try:        # Obtener todas las notificaciones no leídas
+        unread_query = db.collection('users').document(user_id).collection('notifications').where('leido', '==', False)
+        unread_docs = unread_query.stream()
+        
+        batch = db.batch()
+        count = 0
+          # Actualizar todas en lote
+        for doc in unread_docs:
+            batch.update(doc.reference, {
+                'leido': True,
+                'updated_at': firestore.SERVER_TIMESTAMP
+            })
+            count += 1
+        
+        # Si hay notificaciones para actualizar, ejecutar el batch
+        if count > 0:
+            batch.commit()
+            print(f"Marcadas {count} notificaciones como leídas para el usuario {user_id}")
+        
+        return jsonify({
+            'message': f'{count} notificaciones marcadas como leídas',
+            'count': count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al marcar notificaciones como leídas: {str(e)}")
+        return jsonify({'error': 'Error al marcar notificaciones como leídas'}), 500
+
+@app.route('/users/<user_id>/notifications/stats', methods=['GET'])
+@auth_required
+def get_notification_stats(user_id):
+    if user_id != request.uid:
+        print(f"Error: UID no coincide. user_id: {user_id}, request.uid: {request.uid}")
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    try:
+        # Obtener todas las notificaciones del usuario
+        notifications_ref = db.collection('users').document(user_id).collection('notifications')
+        all_notifications = notifications_ref.stream()
+        
+        total_count = 0
+        unread_count = 0
+        scan_count = 0
+        today_count = 0
+        
+        today = datetime.utcnow().date()
+        
+        for notification in all_notifications:
+            notification_data = notification.to_dict()
+            total_count += 1
+            
+            # Contar no leídas
+            if not notification_data.get('leido', False):
+                unread_count += 1
+            
+            # Contar escaneos
+            if notification_data.get('type') == 'pet_scan':
+                scan_count += 1
+            
+            # Contar notificaciones de hoy
+            created_at = notification_data.get('created_at')
+            if created_at and hasattr(created_at, 'date') and created_at.date() == today:
+                today_count += 1
+        
+        print(f"Estadísticas de notificaciones para usuario {user_id}: Total: {total_count}, No leídas: {unread_count}")
+        return jsonify({
+            'total_notifications': total_count,
+            'unread_count': unread_count,
+            'scan_notifications': scan_count,
+            'today_notifications': today_count
+        }), 200
+        
+    except Exception as e:
+        print(f"Error al obtener estadísticas de notificaciones: {str(e)}")
+        return jsonify({'error': 'Error al obtener estadísticas'}), 500
 
 # Ruta para obtener la URL actual del servidor (útil para debugging)
 @app.route('/api/server-info', methods=['GET'])
