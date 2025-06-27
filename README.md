@@ -33,7 +33,6 @@
   - [Requisitos Previos](#requisitos-previos)
   - [Instalación](#instalación)
   - [Uso](#uso)
-  - [Pruebas](#pruebas)
 
 ---
 
